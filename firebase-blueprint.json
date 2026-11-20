@@ -1,0 +1,420 @@
+{
+  "entities": {
+    "RsvpSubmission": {
+      "title": "RsvpSubmission",
+      "description": "Confirmación completa de asistencia de invitados con datos privados para los novios.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "surnames": {
+          "type": "array",
+          "description": "Lista normalizada de apellidos (máximo 4)."
+        },
+        "adults": {
+          "type": "integer"
+        },
+        "kids": {
+          "type": "integer"
+        },
+        "babies": {
+          "type": "integer"
+        },
+        "attending": {
+          "type": "boolean"
+        },
+        "tableNumber": {
+          "type": "integer"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "phoneKey": {
+          "type": "string",
+          "pattern": "^[0-9]{7,18}$",
+          "maxLength": 24
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "guestGroup": {
+          "type": "string",
+          "enum": ["", "familiar_novio", "familiar_novia", "amigo_novia", "amigo_novio"],
+          "description": "División de vínculo con los novios (familiar o amigo del novio/novia)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "guestName",
+        "surnames",
+        "adults",
+        "kids",
+        "babies",
+        "attending",
+        "tableNumber",
+        "phone",
+        "notes",
+        "createdAt"
+      ]
+    },
+    "SeatingEntry": {
+      "title": "SeatingEntry",
+      "description": "Asignación pública de mesa sin datos personales sensibles para el buscador de mesas.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "surnames": {
+          "type": "array",
+          "description": "Apellidos indexados para búsqueda en salón (1 a 4 elementos)."
+        },
+        "seatCount": {
+          "type": "integer"
+        },
+        "babiesCount": {
+          "type": "integer"
+        },
+        "tableNumber": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "surnames",
+        "seatCount",
+        "babiesCount",
+        "tableNumber",
+        "createdAt"
+      ]
+    },
+    "WeddingPhoto": {
+      "title": "WeddingPhoto",
+      "description": "Fotografía optimizada compartida por los invitados para el álbum y el Foto Party en vivo.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 220
+        },
+        "imageData": {
+          "type": "string",
+          "maxLength": 480000
+        },
+        "width": {
+          "type": "integer"
+        },
+        "height": {
+          "type": "integer"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "guestName",
+        "caption",
+        "imageData",
+        "width",
+        "height",
+        "visible",
+        "createdAt"
+      ]
+    },
+    "WeddingConfig": {
+      "title": "WeddingConfig",
+      "description": "Configuración pública administrada por los novios (enlace a Google Drive/Fotos para videos y ritmo de Foto Party).",
+      "type": "object",
+      "properties": {
+        "googlePhotosUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "welcomeNote": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "fotoPartyIntervalSec": {
+          "type": "integer"
+        },
+        "albumEnabledEarly": {
+          "type": "boolean"
+        },
+        "appsScriptUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^(|https://script\\.google\\.com/.*)$"
+        },
+        "totalTables": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "heroPhotoUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "tablesVisibleToGuests": {
+          "type": "boolean"
+        },
+        "adminPhone": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "groomPhone": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "budgetAdultPlates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "budgetKidPlates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "weddingDateISO": {
+          "type": "string",
+          "pattern": "^20[2-9][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+          "maxLength": 10
+        },
+        "ceremonyTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "maxLength": 5
+        },
+        "ceremonyVenue": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "ceremonyAddress": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ceremonyMapUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^(|https://.*)$"
+        },
+        "receptionTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "maxLength": 5
+        },
+        "receptionVenue": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "receptionAddress": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "receptionMapUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^(|https://.*)$"
+        },
+        "brideParents": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "groomParents": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "godparentsList": {
+          "type": "array",
+          "description": "Lista de roles y nombres de padrinos (máximo 12)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "googlePhotosUrl",
+        "welcomeNote",
+        "fotoPartyIntervalSec",
+        "albumEnabledEarly",
+        "updatedAt"
+      ]
+    },
+    "GuestQuota": {
+      "title": "GuestQuota",
+      "description": "Invitado pre-registrado con cupo exacto de sillas y platos (adultos y niños) indexado por teléfono normalizado.",
+      "type": "object",
+      "properties": {
+        "phoneKey": {
+          "type": "string",
+          "pattern": "^[0-9]{7,18}$",
+          "maxLength": 24
+        },
+        "phoneDisplay": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "maxAdults": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "maxKids": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "maxBabies": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "assignedTable": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "guestGroup": {
+          "type": "string",
+          "enum": ["", "familiar_novio", "familiar_novia", "amigo_novia", "amigo_novio"]
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "rsvpId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "phoneKey",
+        "phoneDisplay",
+        "guestName",
+        "maxAdults",
+        "maxKids",
+        "maxBabies",
+        "assignedTable",
+        "guestGroup",
+        "notes",
+        "confirmed",
+        "rsvpId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Registro de administradores autorizados (admin y novio).",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "novio"]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "email",
+        "role",
+        "label",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/rsvps/{rsvpId}": {
+      "schema": { "$ref": "#/entities/RsvpSubmission" },
+      "description": "Confirmaciones RSVP privadas legibles únicamente por los administradores autorizados."
+    },
+    "/guest_quotas/{phoneKey}": {
+      "schema": { "$ref": "#/entities/GuestQuota" },
+      "description": "Lista maestra de invitados con cupos de sillas y platos indexada por teléfono normalizado."
+    },
+    "/seating_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/SeatingEntry" },
+      "description": "Asignaciones de mesa públicas sin PII para el buscador de mesas."
+    },
+    "/wedding_photos/{photoId}": {
+      "schema": { "$ref": "#/entities/WeddingPhoto" },
+      "description": "Álbum colaborativo de fotografías de boda y transmisión en vivo Foto Party."
+    },
+    "/wedding_settings/{configId}": {
+      "schema": { "$ref": "#/entities/WeddingConfig" },
+      "description": "Parámetros del álbum, contactos administrativos y presupuesto."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Documentos de roles administrativos por UID."
+    }
+  }
+}

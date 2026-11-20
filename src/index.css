@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --font-sans: "Montserrat", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-script: "Great Vibes", "Alex Brush", cursive;
+  --color-ivory: #fcfbf9;
+  --color-parchment: #f7f5f0;
+  --color-forest: #2c3e35;
+  --color-gold: #b89753;
+  --color-gold-dark: #967739;
+}
+
+.font-script {
+  font-family: "Great Vibes", "Alex Brush", cursive;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: #fcfbf9;
+    color: #2c3e35;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-serif);
+    text-wrap: balance;
+  }
+
+  /* Protection against long-press downloading/saving on mobile browsers */
+  img {
+    -webkit-touch-callout: none;
+  }
+}
+
+.protect-image,
+.protect-image img {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+@keyframes gentle-bar {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-eq-1 {
+  animation: gentle-bar 1.1s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.animate-eq-2 {
+  animation: gentle-bar 0.85s ease-in-out 0.2s infinite;
+  transform-origin: bottom;
+}
+
+.animate-eq-3 {
+  animation: gentle-bar 1.25s ease-in-out 0.4s infinite;
+  transform-origin: bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-eq-1,
+  .animate-eq-2,
+  .animate-eq-3 {
+    animation: none;
+  }
+}

@@ -1,0 +1,406 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPhoneKey(key) {
+      return key is string && key.size() >= 7 && key.size() <= 24 && key.matches('^[0-9]{7,18}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAdminEmail() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == 'ing.hectorrodas@gmail.com'
+          || request.auth.token.email == 'jorgerodad@gmail.com'
+        );
+    }
+
+    function isCoupleAdmin() {
+      return isVerifiedAdminEmail()
+        || (isSignedIn() && request.auth.token.email_verified == true && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidSurnameList(surnames) {
+      return surnames is list
+        && surnames.size() >= 1
+        && surnames.size() <= 4
+        && surnames[0] is string && surnames[0].size() >= 1 && surnames[0].size() <= 40
+        && (surnames.size() < 2 || (surnames[1] is string && surnames[1].size() >= 1 && surnames[1].size() <= 40))
+        && (surnames.size() < 3 || (surnames[2] is string && surnames[2].size() >= 1 && surnames[2].size() <= 40))
+        && (surnames.size() < 4 || (surnames[3] is string && surnames[3].size() >= 1 && surnames[3].size() <= 40));
+    }
+
+    // --- Validation Blueprints ---
+    function isValidRsvp(data, rsvpId) {
+      return data.keys().hasAll([
+          'id', 'guestName', 'surnames', 'adults', 'kids', 'babies',
+          'attending', 'tableNumber', 'phone', 'notes', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'guestName', 'surnames', 'adults', 'kids', 'babies',
+          'attending', 'tableNumber', 'phone', 'phoneKey', 'notes', 'guestGroup', 'createdAt'
+        ])
+        && data.id is string && data.id == rsvpId && isValidId(data.id)
+        && data.guestName is string && data.guestName.size() >= 2 && data.guestName.size() <= 120
+        && isValidSurnameList(data.surnames)
+        && data.adults is int && data.adults >= 1 && data.adults <= 10
+        && data.kids is int && data.kids >= 0 && data.kids <= 8
+        && data.babies is int && data.babies >= 0 && data.babies <= 5
+        && data.attending is bool
+        && data.tableNumber is int && data.tableNumber >= 0 && data.tableNumber <= 100
+        && data.phone is string && data.phone.size() <= 30
+        && (!('phoneKey' in data) || isValidPhoneKey(data.phoneKey))
+        && data.notes is string && data.notes.size() <= 300
+        && (!('guestGroup' in data) || (
+          data.guestGroup is string
+          && data.guestGroup in ['', 'familiar_novio', 'familiar_novia', 'amigo_novia', 'amigo_novio']
+        ))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidGuestQuota(data, phoneKey) {
+      return data.keys().hasAll([
+          'phoneKey', 'phoneDisplay', 'guestName', 'maxAdults', 'maxKids',
+          'maxBabies', 'assignedTable', 'guestGroup', 'notes',
+          'confirmed', 'rsvpId', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'phoneKey', 'phoneDisplay', 'guestName', 'maxAdults', 'maxKids',
+          'maxBabies', 'assignedTable', 'guestGroup', 'notes',
+          'confirmed', 'rsvpId', 'createdAt', 'updatedAt'
+        ])
+        && data.phoneKey is string && data.phoneKey == phoneKey && isValidPhoneKey(data.phoneKey)
+        && data.phoneDisplay is string && data.phoneDisplay.size() <= 30
+        && data.guestName is string && data.guestName.size() >= 2 && data.guestName.size() <= 120
+        && data.maxAdults is int && data.maxAdults >= 1 && data.maxAdults <= 10
+        && data.maxKids is int && data.maxKids >= 0 && data.maxKids <= 8
+        && data.maxBabies is int && data.maxBabies >= 0 && data.maxBabies <= 5
+        && data.assignedTable is int && data.assignedTable >= 0 && data.assignedTable <= 100
+        && data.guestGroup is string
+        && data.guestGroup in ['', 'familiar_novio', 'familiar_novia', 'amigo_novia', 'amigo_novio']
+        && data.notes is string && data.notes.size() <= 300
+        && data.confirmed is bool
+        && data.rsvpId is string && data.rsvpId.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSeatingEntry(data, entryId) {
+      return data.keys().hasAll([
+          'id', 'displayName', 'surnames', 'seatCount', 'babiesCount', 'tableNumber', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'displayName', 'surnames', 'seatCount', 'babiesCount', 'tableNumber', 'createdAt'
+        ])
+        && data.id is string && data.id == entryId && isValidId(data.id)
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 120
+        && isValidSurnameList(data.surnames)
+        && data.seatCount is int && data.seatCount >= 1 && data.seatCount <= 18
+        && data.babiesCount is int && data.babiesCount >= 0 && data.babiesCount <= 5
+        && data.tableNumber is int && data.tableNumber >= 1 && data.tableNumber <= 100
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWeddingPhoto(data, photoId) {
+      return data.keys().hasAll([
+          'id', 'guestName', 'caption', 'imageData', 'width', 'height', 'visible', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'guestName', 'caption', 'imageData', 'width', 'height', 'visible', 'createdAt'
+        ])
+        && data.id is string && data.id == photoId && isValidId(data.id)
+        && data.guestName is string && data.guestName.size() >= 2 && data.guestName.size() <= 80
+        && data.caption is string && data.caption.size() <= 220
+        && data.imageData is string
+        && data.imageData.size() >= 64 && data.imageData.size() <= 480000
+        && (
+          data.imageData.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+          || data.imageData.matches('^data:image/webp;base64,[A-Za-z0-9+/=]+$')
+        )
+        && data.width is int && data.width >= 50 && data.width <= 4096
+        && data.height is int && data.height >= 50 && data.height <= 4096
+        && data.visible is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidGodparentItem(item) {
+      return item is map
+        && item.keys().hasAll(['roleName', 'names'])
+        && item.keys().hasOnly(['roleName', 'names'])
+        && item.roleName is string && item.roleName.size() >= 1 && item.roleName.size() <= 100
+        && item.names is string && item.names.size() >= 1 && item.names.size() <= 160;
+    }
+
+    function isValidGodparentsList(list) {
+      return list is list
+        && list.size() <= 12
+        && (list.size() < 1 || isValidGodparentItem(list[0]))
+        && (list.size() < 2 || isValidGodparentItem(list[1]))
+        && (list.size() < 3 || isValidGodparentItem(list[2]))
+        && (list.size() < 4 || isValidGodparentItem(list[3]))
+        && (list.size() < 5 || isValidGodparentItem(list[4]))
+        && (list.size() < 6 || isValidGodparentItem(list[5]))
+        && (list.size() < 7 || isValidGodparentItem(list[6]))
+        && (list.size() < 8 || isValidGodparentItem(list[7]))
+        && (list.size() < 9 || isValidGodparentItem(list[8]))
+        && (list.size() < 10 || isValidGodparentItem(list[9]))
+        && (list.size() < 11 || isValidGodparentItem(list[10]))
+        && (list.size() < 12 || isValidGodparentItem(list[11]));
+    }
+
+    function isValidWeddingConfig(data) {
+      return data.keys().hasAll([
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'updatedAt'
+        ])
+        && data.googlePhotosUrl is string && data.googlePhotosUrl.size() <= 500
+        && (
+          data.googlePhotosUrl == ''
+          || data.googlePhotosUrl.matches('^https://.*')
+        )
+        && data.welcomeNote is string && data.welcomeNote.size() <= 300
+        && data.fotoPartyIntervalSec is int && data.fotoPartyIntervalSec >= 3 && data.fotoPartyIntervalSec <= 30
+        && data.albumEnabledEarly is bool
+        && (!('appsScriptUrl' in data) || (
+          data.appsScriptUrl is string
+          && data.appsScriptUrl.size() <= 500
+          && (
+            data.appsScriptUrl == ''
+            || data.appsScriptUrl.matches('^https://script\\.google\\.com/.*')
+          )
+        ))
+        && (!('totalTables' in data) || (
+          data.totalTables is int
+          && data.totalTables >= 1
+          && data.totalTables <= 50
+        ))
+        && (!('heroPhotoUrl' in data) || (
+          data.heroPhotoUrl is string
+          && data.heroPhotoUrl.size() <= 500
+        ))
+        && (!('tablesVisibleToGuests' in data) || data.tablesVisibleToGuests is bool)
+        && (!('adminPhone' in data) || (data.adminPhone is string && data.adminPhone.size() <= 30))
+        && (!('groomPhone' in data) || (data.groomPhone is string && data.groomPhone.size() <= 30))
+        && (!('budgetAdultPlates' in data) || (data.budgetAdultPlates is int && data.budgetAdultPlates >= 0 && data.budgetAdultPlates <= 1000))
+        && (!('budgetKidPlates' in data) || (data.budgetKidPlates is int && data.budgetKidPlates >= 0 && data.budgetKidPlates <= 500))
+        && (!('weddingDateISO' in data) || (
+          data.weddingDateISO is string
+          && data.weddingDateISO.size() == 10
+          && data.weddingDateISO.matches('^20[2-9][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
+        ))
+        && (!('ceremonyTime' in data) || (
+          data.ceremonyTime is string
+          && data.ceremonyTime.size() == 5
+          && data.ceremonyTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        ))
+        && (!('ceremonyVenue' in data) || (data.ceremonyVenue is string && data.ceremonyVenue.size() >= 1 && data.ceremonyVenue.size() <= 120))
+        && (!('ceremonyAddress' in data) || (data.ceremonyAddress is string && data.ceremonyAddress.size() <= 200))
+        && (!('ceremonyMapUrl' in data) || (
+          data.ceremonyMapUrl is string
+          && data.ceremonyMapUrl.size() <= 500
+          && (data.ceremonyMapUrl == '' || data.ceremonyMapUrl.matches('^https://.*'))
+        ))
+        && (!('receptionTime' in data) || (
+          data.receptionTime is string
+          && data.receptionTime.size() == 5
+          && data.receptionTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        ))
+        && (!('receptionVenue' in data) || (data.receptionVenue is string && data.receptionVenue.size() >= 1 && data.receptionVenue.size() <= 120))
+        && (!('receptionAddress' in data) || (data.receptionAddress is string && data.receptionAddress.size() <= 200))
+        && (!('receptionMapUrl' in data) || (
+          data.receptionMapUrl is string
+          && data.receptionMapUrl.size() <= 500
+          && (data.receptionMapUrl == '' || data.receptionMapUrl.matches('^https://.*'))
+        ))
+        && (!('brideParents' in data) || (data.brideParents is string && data.brideParents.size() >= 1 && data.brideParents.size() <= 160))
+        && (!('groomParents' in data) || (data.groomParents is string && data.groomParents.size() >= 1 && data.groomParents.size() <= 160))
+        && (!('godparentsList' in data) || isValidGodparentsList(data.godparentsList))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['email', 'role', 'label', 'createdAt'])
+        && data.keys().hasOnly(['email', 'role', 'label', 'createdAt'])
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 160
+        && data.role in ['admin', 'novio']
+        && data.label is string && data.label.size() >= 2 && data.label.size() <= 80
+        && data.createdAt is timestamp;
+    }
+
+    // --- Collection: /guest_quotas/{phoneKey} (Pre-registered Roster & Quotas) ---
+    match /guest_quotas/{phoneKey} {
+      allow get: if isValidPhoneKey(phoneKey);
+      allow list: if isVerifiedAdminEmail();
+      allow create: if isValidPhoneKey(phoneKey)
+        && isCoupleAdmin()
+        && isValidGuestQuota(incoming(), phoneKey)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidPhoneKey(phoneKey)
+        && isValidGuestQuota(incoming(), phoneKey)
+        && incoming().updatedAt == request.time
+        && incoming().createdAt == existing().createdAt
+        && incoming().phoneKey == existing().phoneKey
+        && (
+          (
+            isCoupleAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'phoneDisplay', 'guestName', 'maxAdults', 'maxKids', 'maxBabies',
+              'assignedTable', 'guestGroup', 'notes', 'confirmed', 'rsvpId', 'updatedAt'
+            ])
+          )
+          || (
+            existing().confirmed == false
+            && incoming().confirmed == true
+            && incoming().rsvpId is string
+            && incoming().rsvpId.size() >= 5
+            && incoming().rsvpId.size() <= 128
+            && isValidId(incoming().rsvpId)
+            && incoming().phoneDisplay == existing().phoneDisplay
+            && incoming().guestName == existing().guestName
+            && incoming().maxAdults == existing().maxAdults
+            && incoming().maxKids == existing().maxKids
+            && incoming().maxBabies == existing().maxBabies
+            && incoming().assignedTable == existing().assignedTable
+            && incoming().guestGroup == existing().guestGroup
+            && incoming().notes == existing().notes
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'confirmed', 'rsvpId', 'updatedAt'
+            ])
+            && existsAfter(/databases/$(database)/documents/rsvps/$(incoming().rsvpId))
+          )
+        );
+      allow delete: if isValidPhoneKey(phoneKey) && isCoupleAdmin();
+    }
+
+    // --- Collection: /rsvps/{rsvpId} (Private PII) ---
+    match /rsvps/{rsvpId} {
+      allow get: if isValidId(rsvpId) && isCoupleAdmin();
+      allow list: if isVerifiedAdminEmail();
+      allow create: if isValidId(rsvpId)
+        && isValidRsvp(incoming(), rsvpId)
+        && incoming().createdAt == request.time
+        && (
+          isCoupleAdmin()
+          || (
+            'phoneKey' in incoming()
+            && isValidPhoneKey(incoming().phoneKey)
+            && exists(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey))
+            && get(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.confirmed == false
+            && incoming().adults <= get(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.maxAdults
+            && incoming().kids <= get(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.maxKids
+            && incoming().babies <= get(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.maxBabies
+            && getAfter(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.confirmed == true
+            && getAfter(/databases/$(database)/documents/guest_quotas/$(incoming().phoneKey)).data.rsvpId == rsvpId
+          )
+        );
+      allow update: if isValidId(rsvpId)
+        && isCoupleAdmin()
+        && isValidRsvp(incoming(), rsvpId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'guestName', 'surnames', 'adults', 'kids', 'babies', 'attending', 'tableNumber', 'phone', 'phoneKey', 'notes', 'guestGroup'
+        ]);
+      allow delete: if isValidId(rsvpId) && isCoupleAdmin();
+    }
+
+    // --- Collection: /seating_entries/{entryId} (Public Non-PII Seating Chart) ---
+    match /seating_entries/{entryId} {
+      allow get: if isValidId(entryId);
+      allow list: if true;
+      allow create: if isValidId(entryId)
+        && isValidSeatingEntry(incoming(), entryId)
+        && incoming().createdAt == request.time
+        && (
+          isCoupleAdmin()
+          || existsAfter(/databases/$(database)/documents/rsvps/$(entryId))
+        );
+      allow update: if isValidId(entryId)
+        && isCoupleAdmin()
+        && isValidSeatingEntry(incoming(), entryId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'surnames', 'seatCount', 'babiesCount', 'tableNumber'
+        ]);
+      allow delete: if isValidId(entryId) && isCoupleAdmin();
+    }
+
+    // --- Collection: /wedding_photos/{photoId} (Album & Live Foto Party) ---
+    match /wedding_photos/{photoId} {
+      allow get: if isValidId(photoId) && (existing().visible == true || isCoupleAdmin());
+      allow list: if existing().visible == true || isVerifiedAdminEmail();
+      allow create: if isValidId(photoId)
+        && isValidWeddingPhoto(incoming(), photoId)
+        && incoming().visible == true
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(photoId)
+        && isCoupleAdmin()
+        && isValidWeddingPhoto(incoming(), photoId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().imageData == existing().imageData
+        && incoming().diff(existing()).affectedKeys().hasOnly(['visible', 'caption', 'guestName']);
+      allow delete: if isValidId(photoId) && isCoupleAdmin();
+    }
+
+    // --- Collection: /wedding_settings/{configId} ---
+    match /wedding_settings/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if true;
+      allow create: if isValidId(configId)
+        && isCoupleAdmin()
+        && isValidWeddingConfig(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(configId)
+        && isCoupleAdmin()
+        && isValidWeddingConfig(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // --- Collection: /admins/{uid} ---
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && isSignedIn() && (request.auth.uid == uid || isCoupleAdmin());
+      allow list: if isVerifiedAdminEmail();
+      allow create: if isValidId(uid)
+        && isVerifiedAdminEmail()
+        && isValidAdminUser(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(uid) && isVerifiedAdminEmail();
+    }
+
+    // --- Connection Test Document ---
+    match /test/connection {
+      allow get: if true;
+    }
+  }
+}
