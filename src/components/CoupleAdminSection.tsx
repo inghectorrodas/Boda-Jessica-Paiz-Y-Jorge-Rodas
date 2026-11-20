@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   FileText,
   FolderArchive,
+  Gift,
   Heart,
   ImagePlus,
   KeyRound,
@@ -25,6 +26,7 @@ import {
   MapPin,
   Phone,
   Plus,
+  QrCode,
   RefreshCw,
   RotateCcw,
   Save,
@@ -108,6 +110,8 @@ import {
   downloadStandaloneSlideshowHtml,
   isValidAppsScriptUrl,
 } from '../utils/driveSlideshowExport';
+import { QRCodeSVG } from 'qrcode.react';
+import { compressQrCodeImage } from '../utils/imageCompression';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
 type AdminTab = 'rsvps' | 'quotas' | 'wedding' | 'photos' | 'settings';
@@ -371,6 +375,28 @@ export const CoupleAdminSection: React.FC = () => {
   const [godparentsList, setGodparentsList] = useState<GodparentRole[]>(
     DEFAULT_GODPARENTS_LIST
   );
+
+  // Gift Registry & Lluvia de Sobres state
+  const [giftEnvelopeNote, setGiftEnvelopeNote] = useState<string>(
+    DEFAULT_WEDDING_CONFIG.giftEnvelopeNote ?? ''
+  );
+  const [giftBankName, setGiftBankName] = useState<string>(
+    DEFAULT_WEDDING_CONFIG.giftBankName ?? ''
+  );
+  const [giftAccountHolder, setGiftAccountHolder] = useState<string>(
+    DEFAULT_WEDDING_CONFIG.giftAccountHolder ?? ''
+  );
+  const [giftAccountType, setGiftAccountType] = useState<string>(
+    DEFAULT_WEDDING_CONFIG.giftAccountType ?? ''
+  );
+  const [giftAccountNumber, setGiftAccountNumber] = useState<string>(
+    DEFAULT_WEDDING_CONFIG.giftAccountNumber ?? ''
+  );
+  const [giftQrValue, setGiftQrValue] = useState<string>('');
+  const [giftQrImage, setGiftQrImage] = useState<string>('');
+  const [isCompressingGiftQr, setIsCompressingGiftQr] = useState(false);
+  const [giftQrError, setGiftQrError] = useState('');
+
   const [savingWeddingDetails, setSavingWeddingDetails] = useState(false);
   const [weddingDetailsSaved, setWeddingDetailsSaved] = useState(false);
   const [weddingDetailsError, setWeddingDetailsError] = useState('');
@@ -587,6 +613,31 @@ export const CoupleAdminSection: React.FC = () => {
             merged.groomParents ?? DEFAULT_WEDDING_CONFIG.groomParents ?? ''
           );
           setGodparentsList(merged.godparentsList ?? DEFAULT_GODPARENTS_LIST);
+          setGiftEnvelopeNote(
+            merged.giftEnvelopeNote ??
+              DEFAULT_WEDDING_CONFIG.giftEnvelopeNote ??
+              ''
+          );
+          setGiftBankName(
+            merged.giftBankName ?? DEFAULT_WEDDING_CONFIG.giftBankName ?? ''
+          );
+          setGiftAccountHolder(
+            merged.giftAccountHolder ??
+              DEFAULT_WEDDING_CONFIG.giftAccountHolder ??
+              ''
+          );
+          setGiftAccountType(
+            merged.giftAccountType ??
+              DEFAULT_WEDDING_CONFIG.giftAccountType ??
+              ''
+          );
+          setGiftAccountNumber(
+            merged.giftAccountNumber ??
+              DEFAULT_WEDDING_CONFIG.giftAccountNumber ??
+              ''
+          );
+          setGiftQrValue(merged.giftQrValue ?? '');
+          setGiftQrImage(merged.giftQrImage ?? '');
         }
       },
       (error) => {
@@ -1462,6 +1513,21 @@ export const CoupleAdminSection: React.FC = () => {
         groomParents.trim().slice(0, 160) ||
         (DEFAULT_WEDDING_CONFIG.groomParents ?? ''),
       godparentsList: cleanGodparents,
+      giftEnvelopeNote:
+        giftEnvelopeNote.trim().slice(0, 300) ||
+        (DEFAULT_WEDDING_CONFIG.giftEnvelopeNote ?? ''),
+      giftBankName:
+        giftBankName.trim().slice(0, 80) ||
+        (DEFAULT_WEDDING_CONFIG.giftBankName ?? ''),
+      giftAccountHolder:
+        giftAccountHolder.trim().slice(0, 120) ||
+        (DEFAULT_WEDDING_CONFIG.giftAccountHolder ?? ''),
+      giftAccountType: giftAccountType.trim().slice(0, 60),
+      giftAccountNumber:
+        giftAccountNumber.trim().slice(0, 60) ||
+        (DEFAULT_WEDDING_CONFIG.giftAccountNumber ?? ''),
+      giftQrValue: giftQrValue.trim().slice(0, 500),
+      giftQrImage: giftQrImage.trim(),
       updatedAt: serverTimestamp(),
     };
   };
@@ -1602,6 +1668,28 @@ export const CoupleAdminSection: React.FC = () => {
 
   const handleRemoveGodparentRow = (index: number) => {
     setGodparentsList((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleGiftQrFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setGiftQrError('');
+    setIsCompressingGiftQr(true);
+    try {
+      const dataUrl = await compressQrCodeImage(file);
+      setGiftQrImage(dataUrl);
+    } catch (err) {
+      setGiftQrError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo procesar la imagen del código QR.'
+      );
+    } finally {
+      setIsCompressingGiftQr(false);
+      e.target.value = '';
+    }
   };
 
   const activeRoleLabel = useMemo(() => {
@@ -2355,6 +2443,219 @@ export const CoupleAdminSection: React.FC = () => {
                   )}
                 </div>
 
+                {/* Gift Registry & Lluvia de Sobres Card */}
+                <div className="bg-white border border-[#b89753]/30 rounded-2xl p-6 shadow-xs space-y-5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center shrink-0">
+                      <Gift className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                        Obsequios y Transferencias
+                      </p>
+                      <h3 className="font-serif text-2xl font-semibold text-[#2c3e35]">
+                        Mesa de Regalos &amp; Lluvia de Sobres
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="giftEnvelopeNoteInput"
+                      className="block text-xs font-medium text-[#2c3e35] mb-1"
+                    >
+                      Mensaje de Lluvia de Sobres en Recepción
+                    </label>
+                    <textarea
+                      id="giftEnvelopeNoteInput"
+                      rows={2}
+                      maxLength={300}
+                      value={giftEnvelopeNote}
+                      onChange={(e) => setGiftEnvelopeNote(e.target.value)}
+                      placeholder="Ej. Tendremos un cofre dispuesto en la entrada del salón..."
+                      className="w-full bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3.5 py-2.5 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label
+                        htmlFor="giftBankNameInput"
+                        className="block text-xs font-medium text-[#2c3e35] mb-1"
+                      >
+                        Banco / Título de Transferencia
+                      </label>
+                      <input
+                        id="giftBankNameInput"
+                        type="text"
+                        maxLength={80}
+                        value={giftBankName}
+                        onChange={(e) => setGiftBankName(e.target.value)}
+                        placeholder="Ej. Banco Agrícola · Transferencia Bancaria"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="giftAccountHolderInput"
+                        className="block text-xs font-medium text-[#2c3e35] mb-1"
+                      >
+                        A nombre de (Titular)
+                      </label>
+                      <input
+                        id="giftAccountHolderInput"
+                        type="text"
+                        maxLength={120}
+                        value={giftAccountHolder}
+                        onChange={(e) => setGiftAccountHolder(e.target.value)}
+                        placeholder="Ej. Jorge Luis Rodas Benítez"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="giftAccountTypeInput"
+                        className="block text-xs font-medium text-[#2c3e35] mb-1"
+                      >
+                        Tipo de Cuenta (opcional)
+                      </label>
+                      <input
+                        id="giftAccountTypeInput"
+                        type="text"
+                        maxLength={60}
+                        value={giftAccountType}
+                        onChange={(e) => setGiftAccountType(e.target.value)}
+                        placeholder="Ej. Cuenta de Ahorro"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="giftAccountNumberInput"
+                        className="block text-xs font-medium text-[#2c3e35] mb-1"
+                      >
+                        Número de Cuenta
+                      </label>
+                      <input
+                        id="giftAccountNumberInput"
+                        type="text"
+                        inputMode="text"
+                        maxLength={60}
+                        value={giftAccountNumber}
+                        onChange={(e) => setGiftAccountNumber(e.target.value)}
+                        placeholder="Ej. 0014-8920-3411-7890"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm font-mono text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Gift QR Upload or Link */}
+                  <div className="rounded-xl bg-[#f7f5f0] border border-[#b89753]/25 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-[#b89753]" />
+                      <p className="text-xs font-semibold text-[#2c3e35]">
+                        Código QR de la Cuenta o Pago Digital (Opcional)
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                      <div className="md:col-span-8 space-y-3">
+                        <div>
+                          <label
+                            htmlFor="giftQrValueInput"
+                            className="block text-[11px] font-medium text-[#2c3e35]/80 mb-1"
+                          >
+                            Enlace de pago o texto del QR (genera QR automático)
+                          </label>
+                          <input
+                            id="giftQrValueInput"
+                            type="text"
+                            maxLength={500}
+                            value={giftQrValue}
+                            onChange={(e) => setGiftQrValue(e.target.value)}
+                            placeholder="https://... o código de transferencia rápida"
+                            className="w-full h-10 bg-white border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-[#b89753]/45 hover:border-[#b89753] text-xs font-semibold text-[#2c3e35] cursor-pointer">
+                            {isCompressingGiftQr ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                            ) : (
+                              <Upload className="w-3.5 h-3.5 text-[#b89753]" />
+                            )}
+                            <span>
+                              {giftQrImage
+                                ? 'Cambiar imagen de QR bancario'
+                                : 'Subir imagen de QR bancario'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleGiftQrFileChange}
+                              className="sr-only"
+                            />
+                          </label>
+
+                          {giftQrImage && (
+                            <button
+                              type="button"
+                              onClick={() => setGiftQrImage('')}
+                              className="inline-flex items-center gap-1 px-3 py-2 rounded-full border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold cursor-pointer hover:bg-rose-100"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Quitar imagen QR</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {giftQrError && (
+                          <p className="text-xs text-rose-700">{giftQrError}</p>
+                        )}
+                      </div>
+
+                      <div className="md:col-span-4 flex justify-center">
+                        {giftQrImage ? (
+                          <div className="p-2.5 rounded-xl bg-white border border-[#b89753]/35 shadow-2xs text-center">
+                            <img
+                              src={giftQrImage}
+                              alt="Vista previa QR bancario"
+                              className="w-28 h-28 object-contain mx-auto"
+                            />
+                            <p className="text-[10px] text-[#2c3e35]/60 mt-1">
+                              Imagen QR cargada
+                            </p>
+                          </div>
+                        ) : giftQrValue.trim() ? (
+                          <div className="p-2.5 rounded-xl bg-white border border-[#b89753]/35 shadow-2xs text-center">
+                            <QRCodeSVG
+                              value={giftQrValue.trim()}
+                              size={108}
+                              bgColor="#ffffff"
+                              fgColor="#2c3e35"
+                              level="M"
+                            />
+                            <p className="text-[10px] text-[#2c3e35]/60 mt-1">
+                              QR generado
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="w-32 h-32 rounded-xl border border-dashed border-[#b89753]/40 bg-white/60 flex flex-col items-center justify-center text-center p-2">
+                            <QrCode className="w-6 h-6 text-[#b89753]/60 mb-1" />
+                            <span className="text-[10px] text-[#2c3e35]/55">
+                              Sin QR configurado
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {weddingDetailsError && (
                   <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5">
                     {weddingDetailsError}
@@ -2365,8 +2666,7 @@ export const CoupleAdminSection: React.FC = () => {
                   <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
                     <span>
-                      Fecha, eventos, padres y padrinos actualizados en la
-                      invitación.
+                      Fecha, eventos, padres, padrinos y mesa de regalos actualizados en la invitación.
                     </span>
                   </p>
                 )}

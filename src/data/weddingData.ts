@@ -145,6 +145,13 @@ export interface WeddingConfigRecord {
   brideParents?: string;
   groomParents?: string;
   godparentsList?: GodparentRole[];
+  giftEnvelopeNote?: string;
+  giftBankName?: string;
+  giftAccountHolder?: string;
+  giftAccountType?: string;
+  giftAccountNumber?: string;
+  giftQrValue?: string;
+  giftQrImage?: string;
 }
 
 export const WEDDING_ALBUM_UNLOCK_ISO = '2026-12-18T00:00:00';
@@ -193,6 +200,14 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   brideParents: 'Sra. Guadalupe Mendoza & Sr. Guadalupe Herrera',
   groomParents: 'Sr. Jorge Rodas Morales & Sra. Carmen Benítez de Rodas',
   godparentsList: DEFAULT_GODPARENTS_LIST,
+  giftEnvelopeNote:
+    'Tendremos un cofre dispuesto en la entrada del Salón de Eventos Elegance para recibir sus sobres y buenos deseos.',
+  giftBankName: 'Banco / Transferencia Bancaria',
+  giftAccountHolder: 'Jorge Luis Rodas Benítez',
+  giftAccountType: 'Cuenta Bancaria',
+  giftAccountNumber: '0014-8920-3411-7890',
+  giftQrValue: '',
+  giftQrImage: '',
 };
 
 export const TABLE_CAPACITY = 10;
@@ -507,6 +522,32 @@ export function mergeWeddingConfig(
       'godparentsList' in raw
         ? sanitizeGodparentsList(raw.godparentsList)
         : DEFAULT_GODPARENTS_LIST,
+    giftEnvelopeNote:
+      typeof raw.giftEnvelopeNote === 'string' && raw.giftEnvelopeNote.trim()
+        ? raw.giftEnvelopeNote.trim().slice(0, 300)
+        : DEFAULT_WEDDING_CONFIG.giftEnvelopeNote,
+    giftBankName:
+      typeof raw.giftBankName === 'string' && raw.giftBankName.trim()
+        ? raw.giftBankName.trim().slice(0, 80)
+        : DEFAULT_WEDDING_CONFIG.giftBankName,
+    giftAccountHolder:
+      typeof raw.giftAccountHolder === 'string' && raw.giftAccountHolder.trim()
+        ? raw.giftAccountHolder.trim().slice(0, 120)
+        : DEFAULT_WEDDING_CONFIG.giftAccountHolder,
+    giftAccountType:
+      typeof raw.giftAccountType === 'string' && raw.giftAccountType.trim()
+        ? raw.giftAccountType.trim().slice(0, 60)
+        : DEFAULT_WEDDING_CONFIG.giftAccountType,
+    giftAccountNumber:
+      typeof raw.giftAccountNumber === 'string' && raw.giftAccountNumber.trim()
+        ? raw.giftAccountNumber.trim().slice(0, 60)
+        : DEFAULT_WEDDING_CONFIG.giftAccountNumber,
+    giftQrValue:
+      typeof raw.giftQrValue === 'string'
+        ? raw.giftQrValue.trim().slice(0, 500)
+        : '',
+    giftQrImage:
+      typeof raw.giftQrImage === 'string' ? raw.giftQrImage.trim() : '',
   };
 }
 

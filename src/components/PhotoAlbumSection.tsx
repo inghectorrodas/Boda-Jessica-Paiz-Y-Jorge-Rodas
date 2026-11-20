@@ -35,8 +35,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import {
   DEFAULT_WEDDING_CONFIG,
+  formatWeddingReportDateLabel,
   generateSafeId,
   isAuthorizedCoupleEmail,
+  mergeWeddingConfig,
   WeddingConfigRecord,
   WeddingPhotoRecord,
 } from '../data/weddingData';
@@ -100,7 +102,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     null
   );
   const [isFotoPartyOpen, setIsFotoPartyOpen] = useState(false);
-  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrModalMode, setQrModalMode] = useState<'album' | 'upload' | null>(null);
   const [driveSlides, setDriveSlides] = useState<DriveSlideItem[]>([]);
   const [driveFolderName, setDriveFolderName] = useState('BODA J&J');
   const [customFolderUrl, setCustomFolderUrl] = useState<string>(() =>
@@ -141,24 +143,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
       doc(db, 'wedding_settings', 'main'),
       (docSnap) => {
         if (docSnap.exists()) {
-          const d = docSnap.data();
-          setConfig({
-            googlePhotosUrl: String(
-              d.googlePhotosUrl || DEFAULT_WEDDING_CONFIG.googlePhotosUrl
-            ),
-            appsScriptUrl: String(d.appsScriptUrl || ''),
-            welcomeNote: String(
-              d.welcomeNote || DEFAULT_WEDDING_CONFIG.welcomeNote
-            ),
-            fotoPartyIntervalSec: Number(d.fotoPartyIntervalSec ?? 6),
-            albumEnabledEarly: Boolean(d.albumEnabledEarly ?? false),
-            totalTables: Number(
-              d.totalTables ?? DEFAULT_WEDDING_CONFIG.totalTables ?? 10
-            ),
-            heroPhotoUrl: d.heroPhotoUrl
-              ? String(d.heroPhotoUrl)
-              : DEFAULT_WEDDING_CONFIG.heroPhotoUrl,
-          });
+          setConfig(mergeWeddingConfig(docSnap.data()));
         }
       },
       (error) => {
@@ -507,6 +492,10 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
 
   const albumUrl =
     typeof window !== 'undefined' ? `${window.location.origin}/#album` : '#album';
+  const sharePhotoUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/#compartir-foto`
+      : '#compartir-foto';
 
   if (!isAlbumVisible) {
     return (
@@ -528,7 +517,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
             Toda la sección de fotografías de la boda y el Foto Party en vivo
             se habilitará automáticamente el{' '}
             <strong className="font-semibold text-[#2c3e35]">
-              18 de Diciembre, 2026
+              {formatWeddingReportDateLabel(config.weddingDateISO)}
             </strong>{' '}
             para que compartas tus recuerdos durante la celebración.
           </p>
@@ -568,7 +557,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsQrModalOpen(true)}
+              onClick={() => setQrModalMode('album')}
               className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white border border-[#b89753]/60 text-[#2c3e35] hover:bg-[#f7f5f0] text-xs font-semibold tracking-wide transition-colors cursor-pointer whitespace-nowrap"
             >
               <QrCode className="w-4 h-4 text-[#b89753]" />
@@ -592,7 +581,10 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
         {/* Upload Card + Live Gallery Split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Upload Form */}
-          <div className="lg:col-span-4 bg-white border border-[#b89753]/30 rounded-2xl p-6 shadow-sm">
+          <div
+            id="compartir-foto"
+            className="lg:col-span-4 scroll-mt-24 bg-white border border-[#b89753]/30 rounded-2xl p-6 shadow-sm"
+          >
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-10 h-10 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center shrink-0">
                 <Camera className="w-4 h-4" />
@@ -716,6 +708,40 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                 </span>
               </button>
             </form>
+
+            {/* Direct QR Code to Share Photos */}
+            <div className="mt-5 pt-5 border-t border-[#b89753]/20">
+              <div className="rounded-xl bg-[#f7f5f0] border border-[#b89753]/25 p-3.5 flex items-center gap-3.5">
+                <div className="shrink-0 p-2 rounded-xl bg-white border border-[#b89753]/30 shadow-2xs">
+                  <QRCodeSVG
+                    value={sharePhotoUrl}
+                    size={92}
+                    bgColor="#ffffff"
+                    fgColor="#2c3e35"
+                    level="M"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                    QR Directo · Enviar Fotos
+                  </p>
+                  <p className="font-serif text-base font-semibold text-[#2c3e35] leading-snug">
+                    Escanea para compartir tus fotos
+                  </p>
+                  <p className="text-[11px] text-[#2c3e35]/70 leading-relaxed">
+                    Abre directamente esta tarjeta desde la cámara del celular.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQrModalMode('upload')}
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#b89753] hover:text-[#967739] cursor-pointer"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Ampliar / Imprimir QR</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Live Fullscreen Slideshow / Carousel */}
@@ -1151,13 +1177,13 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
         </div>
       )}
 
-      {/* Printable Table QR Modal */}
-      {isQrModalOpen && (
+      {/* Printable Table & Direct Photo Upload QR Modal */}
+      {qrModalMode !== null && (
         <div
           className="fixed inset-0 z-50 bg-[#2c3e35]/60 backdrop-blur-xs flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
-          onClick={() => setIsQrModalOpen(false)}
+          onClick={() => setQrModalMode(null)}
         >
           <div
             className="relative max-w-md w-full max-h-[90dvh] overflow-y-auto bg-[#fcfbf9] border border-[#b89753]/40 rounded-2xl p-6 sm:p-8 text-center shadow-2xl space-y-5"
@@ -1165,7 +1191,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
           >
             <button
               type="button"
-              onClick={() => setIsQrModalOpen(false)}
+              onClick={() => setQrModalMode(null)}
               aria-label="Cerrar tarjeta QR"
               className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-[#2c3e35]/70 hover:bg-[#f7f5f0] cursor-pointer"
             >
@@ -1174,20 +1200,48 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
 
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[#b89753] font-semibold">
-                Tarjeta para Centros de Mesa
+                {qrModalMode === 'upload'
+                  ? 'QR Directo a Compartir Foto'
+                  : 'Tarjeta para Centros de Mesa'}
               </p>
               <h3 className="mt-1 font-serif text-3xl font-semibold text-[#2c3e35]">
                 Jessica Paiz &amp; Jorge Rodas
               </h3>
               <p className="mt-2 text-sm text-[#2c3e35]/75">
-                Escanea el código con tu cámara para compartir tus fotos en el
-                álbum y verlas en el Foto Party en vivo.
+                {qrModalMode === 'upload'
+                  ? 'Escanea con tu cámara para abrir directamente el formulario de Compartir Foto y enviar tus recuerdos al Foto Party.'
+                  : 'Escanea el código con tu cámara para compartir tus fotos en el álbum y verlas en el Foto Party en vivo.'}
               </p>
+            </div>
+
+            <div className="inline-flex p-1 rounded-full bg-[#f7f5f0] border border-[#b89753]/25 gap-1">
+              <button
+                type="button"
+                onClick={() => setQrModalMode('upload')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                  qrModalMode === 'upload'
+                    ? 'bg-[#2c3e35] text-white'
+                    : 'text-[#2c3e35]/70 hover:text-[#2c3e35]'
+                }`}
+              >
+                Compartir Foto
+              </button>
+              <button
+                type="button"
+                onClick={() => setQrModalMode('album')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                  qrModalMode === 'album'
+                    ? 'bg-[#2c3e35] text-white'
+                    : 'text-[#2c3e35]/70 hover:text-[#2c3e35]'
+                }`}
+              >
+                Álbum Completo
+              </button>
             </div>
 
             <div className="inline-flex p-5 rounded-2xl bg-white border border-[#b89753]/35 shadow-xs">
               <QRCodeSVG
-                value={albumUrl}
+                value={qrModalMode === 'upload' ? sharePhotoUrl : albumUrl}
                 size={196}
                 bgColor="#ffffff"
                 fgColor="#2c3e35"
@@ -1195,7 +1249,9 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
               />
             </div>
 
-            <p className="text-xs text-[#2c3e35]/55 break-all">{albumUrl}</p>
+            <p className="text-xs text-[#2c3e35]/55 break-all">
+              {qrModalMode === 'upload' ? sharePhotoUrl : albumUrl}
+            </p>
 
             <button
               type="button"

@@ -174,7 +174,7 @@ service cloud.firestore {
           'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'updatedAt'
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'updatedAt'
         ])
         && data.googlePhotosUrl is string && data.googlePhotosUrl.size() <= 500
         && (
@@ -238,6 +238,21 @@ service cloud.firestore {
         && (!('brideParents' in data) || (data.brideParents is string && data.brideParents.size() >= 1 && data.brideParents.size() <= 160))
         && (!('groomParents' in data) || (data.groomParents is string && data.groomParents.size() >= 1 && data.groomParents.size() <= 160))
         && (!('godparentsList' in data) || isValidGodparentsList(data.godparentsList))
+        && (!('giftEnvelopeNote' in data) || (data.giftEnvelopeNote is string && data.giftEnvelopeNote.size() <= 300))
+        && (!('giftBankName' in data) || (data.giftBankName is string && data.giftBankName.size() <= 80))
+        && (!('giftAccountHolder' in data) || (data.giftAccountHolder is string && data.giftAccountHolder.size() <= 120))
+        && (!('giftAccountType' in data) || (data.giftAccountType is string && data.giftAccountType.size() <= 60))
+        && (!('giftAccountNumber' in data) || (data.giftAccountNumber is string && data.giftAccountNumber.size() <= 60))
+        && (!('giftQrValue' in data) || (data.giftQrValue is string && data.giftQrValue.size() <= 500))
+        && (!('giftQrImage' in data) || (
+          data.giftQrImage is string
+          && data.giftQrImage.size() <= 220000
+          && (
+            data.giftQrImage == ''
+            || data.giftQrImage.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+            || data.giftQrImage.matches('^data:image/webp;base64,[A-Za-z0-9+/=]+$')
+          )
+        ))
         && data.updatedAt is timestamp;
     }
 
@@ -381,7 +396,7 @@ service cloud.firestore {
         && isValidWeddingConfig(incoming())
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'updatedAt'
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'updatedAt'
         ]);
       allow delete: if false;
     }

@@ -269,6 +269,35 @@
           "type": "array",
           "description": "Lista de roles y nombres de padrinos (máximo 12)."
         },
+        "giftEnvelopeNote": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "giftBankName": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "giftAccountHolder": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "giftAccountType": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "giftAccountNumber": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "giftQrValue": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "giftQrImage": {
+          "type": "string",
+          "maxLength": 220000,
+          "pattern": "^(|data:image/(jpeg|webp);base64,[A-Za-z0-9+/=]+)$"
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time"

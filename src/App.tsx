@@ -575,6 +575,7 @@ export default function App() {
       <GiftRegistryModal
         isOpen={isGiftModalOpen}
         onClose={() => setIsGiftModalOpen(false)}
+        config={weddingConfig}
       />
     </div>
   );
