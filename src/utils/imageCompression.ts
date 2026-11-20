@@ -49,33 +49,38 @@ export async function compressWeddingPhoto(
     let quality = 0.78;
     let dataUrl = canvas.toDataURL('image/jpeg', quality);
 
-    while (dataUrl.length > MAX_DATA_URL_CHARS && quality > 0.4) {
+    while (dataUrl.length > MAX_DATA_URL_CHARS && quality > 0.42) {
       quality -= 0.1;
       dataUrl = canvas.toDataURL('image/jpeg', quality);
     }
 
-    if (dataUrl.length > MAX_DATA_URL_CHARS) {
-      // Scale down slightly further if still dense
+    let currentCanvas = canvas;
+    let currentWidth = width;
+    let currentHeight = height;
+
+    while (dataUrl.length > MAX_DATA_URL_CHARS && Math.max(currentWidth, currentHeight) > 320) {
+      currentWidth = Math.max(50, Math.round(currentWidth * 0.75));
+      currentHeight = Math.max(50, Math.round(currentHeight * 0.75));
       const smallerCanvas = document.createElement('canvas');
-      smallerCanvas.width = Math.round(width * 0.75);
-      smallerCanvas.height = Math.round(height * 0.75);
+      smallerCanvas.width = currentWidth;
+      smallerCanvas.height = currentHeight;
       const sCtx = smallerCanvas.getContext('2d');
-      if (sCtx) {
-        sCtx.drawImage(canvas, 0, 0, smallerCanvas.width, smallerCanvas.height);
-        dataUrl = smallerCanvas.toDataURL('image/jpeg', 0.68);
-        return {
-          imageData: dataUrl,
-          width: smallerCanvas.width,
-          height: smallerCanvas.height,
-          sizeKB: Math.round((dataUrl.length * 3) / 4 / 1024),
-        };
-      }
+      if (!sCtx) break;
+      sCtx.fillStyle = '#fcfbf9';
+      sCtx.fillRect(0, 0, currentWidth, currentHeight);
+      sCtx.drawImage(currentCanvas, 0, 0, currentWidth, currentHeight);
+      currentCanvas = smallerCanvas;
+      dataUrl = currentCanvas.toDataURL('image/jpeg', 0.65);
+    }
+
+    if (dataUrl.length > MAX_DATA_URL_CHARS) {
+      dataUrl = currentCanvas.toDataURL('image/jpeg', 0.45);
     }
 
     return {
       imageData: dataUrl,
-      width,
-      height,
+      width: currentWidth,
+      height: currentHeight,
       sizeKB: Math.round((dataUrl.length * 3) / 4 / 1024),
     };
   } finally {

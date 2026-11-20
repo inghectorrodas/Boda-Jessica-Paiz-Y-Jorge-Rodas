@@ -120,6 +120,18 @@ export interface WeddingPhotoRecord {
   createdAt?: { seconds: number; nanoseconds: number } | null;
 }
 
+export interface HeroPhotoRecord {
+  id: string;
+  imageData: string;
+  caption: string;
+  sortOrder: number;
+  active: boolean;
+  createdAt?: { seconds: number; nanoseconds: number } | null;
+}
+
+export type CustomAudioMode = 'synth' | 'url' | 'uploaded';
+
+
 export interface WeddingConfigRecord {
   googlePhotosUrl: string;
   appsScriptUrl: string;
@@ -152,6 +164,14 @@ export interface WeddingConfigRecord {
   giftAccountNumber?: string;
   giftQrValue?: string;
   giftQrImage?: string;
+  hideDefaultHeroPhotos?: boolean;
+  customAudioMode?: CustomAudioMode;
+  customAudioUrl?: string;
+  customAudioTitle?: string;
+  customAudioMime?: string;
+  customAudioChunkCount?: number;
+  customAudioUpdatedToken?: string;
+  customAudioDurationSec?: number;
 }
 
 export const WEDDING_ALBUM_UNLOCK_ISO = '2026-12-18T00:00:00';
@@ -208,7 +228,22 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   giftAccountNumber: '0014-8920-3411-7890',
   giftQrValue: '',
   giftQrImage: '',
+  hideDefaultHeroPhotos: false,
+  customAudioMode: 'synth',
+  customAudioUrl: '',
+  customAudioTitle: 'Melodía Ambiental Romántica',
+  customAudioMime: 'audio/mpeg',
+  customAudioChunkCount: 0,
+  customAudioUpdatedToken: '',
+  customAudioDurationSec: 0,
 };
+
+export const DEFAULT_HERO_PHOTOS = [
+  'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80',
+] as const;
 
 export const TABLE_CAPACITY = 10;
 
@@ -548,6 +583,37 @@ export function mergeWeddingConfig(
         : '',
     giftQrImage:
       typeof raw.giftQrImage === 'string' ? raw.giftQrImage.trim() : '',
+    hideDefaultHeroPhotos: Boolean(raw.hideDefaultHeroPhotos ?? false),
+    customAudioMode:
+      raw.customAudioMode === 'uploaded' ||
+      raw.customAudioMode === 'url' ||
+      raw.customAudioMode === 'synth'
+        ? raw.customAudioMode
+        : 'synth',
+    customAudioUrl:
+      typeof raw.customAudioUrl === 'string'
+        ? raw.customAudioUrl.trim().slice(0, 500)
+        : '',
+    customAudioTitle:
+      typeof raw.customAudioTitle === 'string' && raw.customAudioTitle.trim()
+        ? raw.customAudioTitle.trim().slice(0, 120)
+        : DEFAULT_WEDDING_CONFIG.customAudioTitle,
+    customAudioMime:
+      typeof raw.customAudioMime === 'string' && raw.customAudioMime.trim()
+        ? raw.customAudioMime.trim().slice(0, 80)
+        : 'audio/mpeg',
+    customAudioChunkCount:
+      typeof raw.customAudioChunkCount === 'number'
+        ? Math.max(0, Number(raw.customAudioChunkCount))
+        : 0,
+    customAudioUpdatedToken:
+      typeof raw.customAudioUpdatedToken === 'string'
+        ? raw.customAudioUpdatedToken.trim().slice(0, 64)
+        : '',
+    customAudioDurationSec:
+      typeof raw.customAudioDurationSec === 'number'
+        ? Math.max(0, Number(raw.customAudioDurationSec))
+        : 0,
   };
 }
 

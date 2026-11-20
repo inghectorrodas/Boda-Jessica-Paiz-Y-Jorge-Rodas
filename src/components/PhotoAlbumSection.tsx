@@ -87,14 +87,23 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     currentUser && isAuthorizedCoupleEmail(currentUser.email)
   );
 
-  // Upload form state
-  const [guestName, setGuestName] = useState('');
+  // Upload form state (Modo Paparazzi: hasta 10 fotos por publicación)
+  const MAX_PHOTOS_PER_POST = 10;
+  const [guestName, setGuestName] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('boda_paparazzi_guest_name') || ''
+      : ''
+  );
   const [caption, setCaption] = useState('');
-  const [preparedPhoto, setPreparedPhoto] =
-    useState<CompressedPhotoResult | null>(null);
+  const [preparedPhotos, setPreparedPhotos] = useState<
+    Array<CompressedPhotoResult & { localId: string; fileName: string }>
+  >([]);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [uploadWarning, setUploadWarning] = useState('');
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState('');
 
   // Lightbox, QR, Carousel & Foto Party state
@@ -392,25 +401,89 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
   }, [isAlbumVisible]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const selectedFiles = Array.from(e.target.files ?? []);
+    if (selectedFiles.length === 0) return;
 
     setUploadError('');
+    setUploadWarning('');
     setUploadSuccessMessage('');
+
+    const remainingSlots = MAX_PHOTOS_PER_POST - preparedPhotos.length;
+    if (remainingSlots <= 0) {
+      setUploadWarning(
+        `Ya tienes el máximo de ${MAX_PHOTOS_PER_POST} fotos en esta publicación. Publica estas primero o quita alguna para agregar otra.`
+      );
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const filesToProcess = selectedFiles.slice(0, remainingSlots);
+    const exceededLimit = selectedFiles.length > remainingSlots;
+
     setIsCompressing(true);
+    const newlyPrepared: Array<
+      CompressedPhotoResult & { localId: string; fileName: string }
+    > = [];
+    let failedCount = 0;
 
     try {
-      const compressed = await compressWeddingPhoto(file);
-      setPreparedPhoto(compressed);
-    } catch (err) {
-      setUploadError(
-        err instanceof Error
-          ? err.message
-          : 'No pudimos procesar esa fotografía.'
-      );
-      setPreparedPhoto(null);
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        setCompressionProgress(
+          `Optimizando foto ${i + 1} de ${filesToProcess.length}...`
+        );
+        try {
+          const compressed = await compressWeddingPhoto(file);
+          newlyPrepared.push({
+            ...compressed,
+            localId: `${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
+            fileName: file.name || `foto_${i + 1}.jpg`,
+          });
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (newlyPrepared.length > 0) {
+        setPreparedPhotos((prev) =>
+          [...prev, ...newlyPrepared].slice(0, MAX_PHOTOS_PER_POST)
+        );
+      }
+
+      if (exceededLimit) {
+        setUploadWarning(
+          `Máximo ${MAX_PHOTOS_PER_POST} fotos por publicación. Se prepararon ${filesToProcess.length} fotos; publica este grupo y podrás subir más enseguida.`
+        );
+      } else if (failedCount > 0 && newlyPrepared.length > 0) {
+        setUploadWarning(
+          `${failedCount} archivo(s) no eran imágenes válidas y se omitieron.`
+        );
+      } else if (failedCount > 0 && newlyPrepared.length === 0) {
+        setUploadError(
+          'No pudimos procesar las imágenes seleccionadas. Verifica que sean JPG, PNG o WebP.'
+        );
+      }
     } finally {
       setIsCompressing(false);
+      setCompressionProgress('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemovePreparedPhoto = (localId: string) => {
+    setPreparedPhotos((prev) => prev.filter((item) => item.localId !== localId));
+    setUploadError('');
+    setUploadWarning('');
+  };
+
+  const handleClearPreparedPhotos = () => {
+    setPreparedPhotos([]);
+    setUploadError('');
+    setUploadWarning('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -418,75 +491,129 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     e.preventDefault();
     const trimmedName = guestName.trim().slice(0, 80);
     if (trimmedName.length < 2) {
-      setUploadError('Por favor escribe tu nombre antes de compartir la foto.');
+      setUploadError('Por favor escribe tu nombre antes de compartir tus fotos.');
       return;
     }
-    if (!preparedPhoto) {
-      setUploadError('Selecciona o toma una fotografía primero.');
+    if (preparedPhotos.length === 0) {
+      setUploadError('Selecciona o toma al menos una fotografía primero (hasta 10 por envío).');
       return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('boda_paparazzi_guest_name', trimmedName);
     }
 
     setUploadError('');
+    setUploadWarning('');
     setUploadSuccessMessage('');
     setIsUploading(true);
 
-    const photoId = generateSafeId('photo');
+    const trimmedCaption = caption.trim().slice(0, 220);
+    const totalToUpload = preparedPhotos.length;
+    const uploadedItems: Array<{
+      photoId: string;
+      imageData: string;
+    }> = [];
+    const failedLocalIds = new Set<string>();
+    const uploadedLocalIds = new Set<string>();
+    let lastError: unknown = null;
+    let lastFailedPhotoId = 'photo';
+
     try {
-      await setDoc(doc(db, 'wedding_photos', photoId), {
-        id: photoId,
-        guestName: trimmedName,
-        caption: caption.trim().slice(0, 220),
-        imageData: preparedPhoto.imageData,
-        width: preparedPhoto.width,
-        height: preparedPhoto.height,
-        visible: true,
-        createdAt: serverTimestamp(),
-      });
-
-      setPreparedPhoto(null);
-      setCaption('');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setUploadSuccessMessage(
-        '¡Fotografía publicada en el álbum y Foto Party!'
-      );
-      window.setTimeout(() => setUploadSuccessMessage(''), 4500);
-
-      const token = typeof window !== 'undefined' ? window.localStorage.getItem('boda_drive_access_token') : null;
-      const folderId = extractDriveFolderId(config.googlePhotosUrl);
-      if (token && folderId) {
-        window.setTimeout(async () => {
-          try {
-            const blob = dataUrlToBlob(preparedPhoto.imageData);
-            const safeGuest = trimmedName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 28) || 'invitado';
-            const fileName = `${photoId}_${safeGuest}.jpg`;
-            await uploadBlobToGoogleDriveFolder({
-              folderId,
-              accessToken: token,
-              fileName,
-              blob,
-              description: caption ? `Compartida por ${trimmedName}: ${caption}` : `Compartida por ${trimmedName}`,
-            });
-          } catch (err) {
-            console.error('Error auto-syncing photo to Google Drive:', err);
-          }
-        }, 5000);
-      }
-    } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.CREATE,
-          `wedding_photos/${photoId}`
+      for (let i = 0; i < preparedPhotos.length; i++) {
+        const item = preparedPhotos[i];
+        setUploadProgress(
+          totalToUpload > 1
+            ? `Publicando foto ${i + 1} de ${totalToUpload}...`
+            : 'Publicando fotografía...'
         );
-      } catch {
-        setUploadError(
-          'No pudimos subir tu fotografía en este momento. Intenta de nuevo.'
+        const photoId = generateSafeId('photo');
+        try {
+          await setDoc(doc(db, 'wedding_photos', photoId), {
+            id: photoId,
+            guestName: trimmedName,
+            caption: trimmedCaption,
+            imageData: item.imageData,
+            width: item.width,
+            height: item.height,
+            visible: true,
+            createdAt: serverTimestamp(),
+          });
+          uploadedLocalIds.add(item.localId);
+          uploadedItems.push({ photoId, imageData: item.imageData });
+        } catch (err) {
+          failedLocalIds.add(item.localId);
+          lastError = err;
+          lastFailedPhotoId = photoId;
+        }
+      }
+
+      if (uploadedItems.length > 0) {
+        const token =
+          typeof window !== 'undefined'
+            ? window.localStorage.getItem('boda_drive_access_token')
+            : null;
+        const folderId = extractDriveFolderId(config.googlePhotosUrl);
+        if (token && folderId) {
+          const itemsForDrive = [...uploadedItems];
+          window.setTimeout(async () => {
+            const safeGuest =
+              trimmedName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 28) ||
+              'invitado';
+            for (const driveItem of itemsForDrive) {
+              try {
+                const blob = dataUrlToBlob(driveItem.imageData);
+                const fileName = `${driveItem.photoId}_${safeGuest}.jpg`;
+                await uploadBlobToGoogleDriveFolder({
+                  folderId,
+                  accessToken: token,
+                  fileName,
+                  blob,
+                  description: trimmedCaption
+                    ? `Compartida por ${trimmedName}: ${trimmedCaption}`
+                    : `Compartida por ${trimmedName}`,
+                });
+              } catch (err) {
+                console.error('Error auto-syncing photo to Google Drive:', err);
+              }
+            }
+          }, 5000);
+        }
+      }
+
+      if (failedLocalIds.size === 0) {
+        setPreparedPhotos([]);
+        setCaption('');
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        setUploadSuccessMessage(
+          uploadedItems.length === 1
+            ? '¡Fotografía publicada en el álbum, Foto Party y guardada para los novios!'
+            : `¡${uploadedItems.length} fotografías publicadas en el álbum, Foto Party y guardadas para los novios!`
         );
+        window.setTimeout(() => setUploadSuccessMessage(''), 5500);
+      } else {
+        setPreparedPhotos((prev) =>
+          prev.filter((item) => !uploadedLocalIds.has(item.localId))
+        );
+        try {
+          handleFirestoreError(
+            lastError,
+            OperationType.CREATE,
+            `wedding_photos/${lastFailedPhotoId}`
+          );
+        } catch {
+          setUploadError(
+            uploadedItems.length > 0
+              ? `Se publicaron ${uploadedItems.length} fotos, pero ${failedLocalIds.size} no pudieron enviarse. Presiona Publicar para reintentar las restantes.`
+              : 'No pudimos subir tus fotografías en este momento. Intenta de nuevo.'
+          );
+        }
       }
     } finally {
       setIsUploading(false);
+      setUploadProgress('');
     }
   };
 
@@ -591,10 +718,10 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
               </div>
               <div>
                 <h3 className="font-serif text-2xl font-semibold text-[#2c3e35] leading-none">
-                  Compartir Foto
+                  Modo Paparazzi · Foto Party
                 </h3>
-                <p className="text-xs text-[#2c3e35]/60 mt-1">
-                  Se proyecta en el Foto Party al instante
+                <p className="text-xs text-[#2c3e35]/65 mt-1">
+                  Sube hasta {MAX_PHOTOS_PER_POST} fotos por envío para el Foto Party y el recuerdo de los novios
                 </p>
               </div>
             </div>
@@ -644,42 +771,106 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                   id="photoFileInput"
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleFileChange}
                   className="sr-only"
                 />
-                <label
-                  htmlFor="photoFileInput"
-                  className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#b89753]/60 bg-[#fcfbf9] hover:bg-[#f7f5f0] px-4 py-5 text-center cursor-pointer transition-colors"
-                >
-                  {isCompressing ? (
-                    <div className="flex items-center gap-2 text-xs text-[#2c3e35]">
-                      <Loader2 className="w-4 h-4 animate-spin text-[#b89753]" />
-                      <span>Optimizando fotografía...</span>
-                    </div>
-                  ) : preparedPhoto ? (
-                    <div className="w-full space-y-2">
-                      <img
-                        src={preparedPhoto.imageData}
-                        alt="Vista previa"
-                        className="w-full h-40 object-cover rounded-lg border border-[#b89753]/25"
-                      />
-                      <p className="text-[11px] text-[#2c3e35]/65 tabular-nums">
-                        Optimizada a {preparedPhoto.sizeKB} KB · Toca para cambiar
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <ImagePlus className="w-6 h-6 text-[#b89753] mb-2" />
-                      <span className="text-xs font-semibold text-[#2c3e35]">
-                        Elegir foto o tomar con cámara
+
+                {preparedPhotos.length === 0 ? (
+                  <label
+                    htmlFor="photoFileInput"
+                    className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#b89753]/60 bg-[#fcfbf9] hover:bg-[#f7f5f0] px-4 py-5 text-center cursor-pointer transition-colors"
+                  >
+                    {isCompressing ? (
+                      <div className="flex items-center gap-2 text-xs text-[#2c3e35]">
+                        <Loader2 className="w-4 h-4 animate-spin text-[#b89753]" />
+                        <span>{compressionProgress || 'Optimizando fotografías...'}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <ImagePlus className="w-6 h-6 text-[#b89753] mb-2" />
+                        <span className="text-xs font-semibold text-[#2c3e35]">
+                          Elegir hasta {MAX_PHOTOS_PER_POST} fotos o tomar con cámara
+                        </span>
+                        <span className="text-[11px] text-[#2c3e35]/60 mt-1">
+                          Compresión automática rápida · Todas quedan guardadas para los novios
+                        </span>
+                      </>
+                    )}
+                  </label>
+                ) : (
+                  <div className="rounded-xl border border-[#b89753]/45 bg-[#fcfbf9] p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#2c3e35] tabular-nums">
+                        {preparedPhotos.length} / {MAX_PHOTOS_PER_POST} fotos listas
                       </span>
-                      <span className="text-[11px] text-[#2c3e35]/55 mt-1">
-                        Compresión automática ligera (sin costo extra)
-                      </span>
-                    </>
-                  )}
-                </label>
+                      <div className="flex items-center gap-2">
+                        {preparedPhotos.length < MAX_PHOTOS_PER_POST && !isCompressing && !isUploading && (
+                          <label
+                            htmlFor="photoFileInput"
+                            className="text-[11px] font-semibold text-[#b89753] hover:text-[#967739] cursor-pointer"
+                          >
+                            + Agregar más
+                          </label>
+                        )}
+                        {!isUploading && !isCompressing && (
+                          <button
+                            type="button"
+                            onClick={handleClearPreparedPhotos}
+                            className="text-[11px] font-medium text-[#2c3e35]/60 hover:text-rose-700 cursor-pointer"
+                          >
+                            Vaciar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isCompressing && (
+                      <div className="flex items-center gap-2 text-xs text-[#2c3e35] bg-white rounded-lg px-2.5 py-2 border border-[#b89753]/25">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753] shrink-0" />
+                        <span>{compressionProgress || 'Optimizando fotografías...'}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 gap-2">
+                      {preparedPhotos.map((item, idx) => (
+                        <div
+                          key={item.localId}
+                          className="relative aspect-square rounded-lg overflow-hidden border border-[#b89753]/30 bg-[#141d18]"
+                        >
+                          <img
+                            src={item.imageData}
+                            alt={`Vista previa ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          {!isUploading && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePreparedPhoto(item.localId)}
+                              aria-label={`Quitar foto ${idx + 1}`}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#141d18]/80 text-white hover:bg-rose-700 flex items-center justify-center cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-[#141d18]/75 text-[9px] text-white/90 tabular-nums">
+                            {item.sizeKB} KB
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {uploadWarning && (
+                <p
+                  role="status"
+                  className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2"
+                >
+                  {uploadWarning}
+                </p>
+              )}
 
               {uploadError && (
                 <p
@@ -699,12 +890,16 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
 
               <button
                 type="submit"
-                disabled={isUploading || isCompressing}
+                disabled={isUploading || isCompressing || preparedPhotos.length === 0}
                 className="w-full h-11 rounded-xl bg-[#b89753] hover:bg-[#967739] disabled:opacity-60 text-white text-xs font-semibold tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
               >
                 {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
                 <span>
-                  {isUploading ? 'Enviando...' : 'Publicar en el Álbum'}
+                  {isUploading
+                    ? uploadProgress || 'Enviando...'
+                    : preparedPhotos.length > 1
+                      ? `Publicar ${preparedPhotos.length} fotos en el Álbum`
+                      : 'Publicar en el Álbum'}
                 </span>
               </button>
             </form>
@@ -723,13 +918,13 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                 </div>
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="text-[10px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
-                    QR Directo · Enviar Fotos
+                    QR Paparazzi · Enviar Fotos
                   </p>
                   <p className="font-serif text-base font-semibold text-[#2c3e35] leading-snug">
-                    Escanea para compartir tus fotos
+                    Escanea y sé paparazzi de la fiesta
                   </p>
                   <p className="text-[11px] text-[#2c3e35]/70 leading-relaxed">
-                    Abre directamente esta tarjeta desde la cámara del celular.
+                    Sube hasta {MAX_PHOTOS_PER_POST} fotos por envío directo desde tu celular para que los novios conserven todos los recuerdos.
                   </p>
                   <button
                     type="button"
@@ -1162,7 +1357,7 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
               )}
             </div>
             <div className="p-5 flex items-center justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.18em] text-[#b89753] font-semibold">
                   Compartida por {selectedPhoto.guestName}
                 </p>
@@ -1172,6 +1367,18 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                   </p>
                 )}
               </div>
+              {isCoupleOrAdmin && selectedPhoto.imageData && (
+                <a
+                  href={selectedPhoto.imageData}
+                  download={`Boda_JJ_${selectedPhoto.guestName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 24) || 'invitado'}.jpg`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] text-white text-xs font-semibold transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#b89753]" />
+                  <span>Guardar</span>
+                </a>
+              )}
             </div>
           </div>
         </div>

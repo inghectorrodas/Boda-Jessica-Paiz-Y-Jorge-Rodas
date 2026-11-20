@@ -7,7 +7,7 @@ import {
   X,
 } from 'lucide-react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { AmbientMusicPlayer } from './components/AmbientMusicPlayer';
 import {
   BotanicalDivider,
@@ -33,6 +33,7 @@ import {
   formatWeddingDateDots,
   formatWeddingDateUpper,
   formatWeddingDayName,
+  HeroPhotoRecord,
   isAuthorizedCoupleEmail,
   isWeddingDayReached,
   mergeWeddingConfig,
@@ -47,6 +48,7 @@ export default function App() {
   const [weddingConfig, setWeddingConfig] = useState<WeddingConfigRecord>(
     DEFAULT_WEDDING_CONFIG
   );
+  const [heroPhotos, setHeroPhotos] = useState<HeroPhotoRecord[]>([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [hasOpenedEnvelope, setHasOpenedEnvelope] = useState<boolean>(() => {
@@ -77,10 +79,38 @@ export default function App() {
       }
     );
 
+    const unsubHeroPhotos = onSnapshot(
+      query(
+        collection(db, 'wedding_hero_photos'),
+        where('active', '==', true)
+      ),
+      (snap) => {
+        const list: HeroPhotoRecord[] = snap.docs
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              imageData: String(data.imageData ?? ''),
+              caption: String(data.caption ?? ''),
+              sortOrder: Number(data.sortOrder ?? 0),
+              active: Boolean(data.active ?? true),
+              createdAt: data.createdAt ?? null,
+            };
+          })
+          .filter((item) => item.imageData.length > 0)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setHeroPhotos(list);
+      },
+      () => {
+        // Fallback to default hero photos on read error
+      }
+    );
+
     return () => {
       window.clearInterval(timer);
       unsubAuth();
       unsubConfig();
+      unsubHeroPhotos();
     };
   }, []);
 
@@ -91,8 +121,19 @@ export default function App() {
 
   const albumEnabledEarly = Boolean(weddingConfig.albumEnabledEarly);
   const tablesVisibleToGuests = Boolean(weddingConfig.tablesVisibleToGuests);
+  const activeHeroPhotoUrls = React.useMemo(
+    () => heroPhotos.map((item) => item.imageData),
+    [heroPhotos]
+  );
   const heroPhotoUrl =
-    weddingConfig.heroPhotoUrl ?? DEFAULT_WEDDING_CONFIG.heroPhotoUrl ?? '';
+    activeHeroPhotoUrls[0] ??
+    weddingConfig.heroPhotoUrl ??
+    DEFAULT_WEDDING_CONFIG.heroPhotoUrl ??
+    '';
+  const envelopeConfig = React.useMemo(
+    () => ({ ...weddingConfig, heroPhotoUrl }),
+    [weddingConfig, heroPhotoUrl]
+  );
   const liveEvents = React.useMemo(
     () => buildWeddingEventsFromConfig(weddingConfig),
     [weddingConfig]
@@ -274,6 +315,8 @@ export default function App() {
             <div className="lg:col-span-6 flex">
               <CoupleEditorialPortrait
                 heroPhotoUrl={heroPhotoUrl}
+                customHeroPhotos={activeHeroPhotoUrls}
+                hideDefaultHeroPhotos={Boolean(weddingConfig.hideDefaultHeroPhotos)}
                 isCoupleOrAdmin={isCoupleOrAdmin}
                 weddingDateFormatted={weddingDateDots}
                 weddingDayName={weddingDayName}
@@ -584,7 +627,7 @@ export default function App() {
       </footer>
 
       {/* FLOATING AMBIENT MUSIC PLAYER */}
-      <AmbientMusicPlayer />
+      <AmbientMusicPlayer config={weddingConfig} />
 
       {/* GIFT REGISTRY MODAL */}
       <GiftRegistryModal
@@ -596,7 +639,7 @@ export default function App() {
       {/* INTERACTIVE ENVELOPE PRELOAD SCREEN */}
       {!hasOpenedEnvelope && (
         <WeddingEnvelopeIntro
-          config={weddingConfig}
+          config={envelopeConfig}
           onOpen={() => setHasOpenedEnvelope(true)}
         />
       )}

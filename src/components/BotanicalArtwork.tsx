@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+import { DEFAULT_HERO_PHOTOS } from '../data/weddingData';
+
 export const BotanicalDivider: React.FC<{ className?: string }> = ({
   className = '',
 }) => (
@@ -61,6 +63,8 @@ export const WatercolorRosesBouquet: React.FC<{
 
 interface CoupleEditorialPortraitProps {
   heroPhotoUrl?: string;
+  customHeroPhotos?: string[];
+  hideDefaultHeroPhotos?: boolean;
   isCoupleOrAdmin?: boolean;
   weddingDateFormatted?: string;
   weddingDayName?: string;
@@ -69,6 +73,8 @@ interface CoupleEditorialPortraitProps {
 
 export const CoupleEditorialPortrait: React.FC<CoupleEditorialPortraitProps> = ({
   heroPhotoUrl,
+  customHeroPhotos,
+  hideDefaultHeroPhotos = false,
   isCoupleOrAdmin = false,
   weddingDateFormatted = '18 · Diciembre · 2026',
   weddingDayName = 'Viernes',
@@ -76,26 +82,41 @@ export const CoupleEditorialPortrait: React.FC<CoupleEditorialPortraitProps> = (
 }) => {
   const couplePhotos = React.useMemo(() => {
     const list: string[] = [];
-    if (heroPhotoUrl && heroPhotoUrl.trim().length > 0) {
-      list.push(heroPhotoUrl.trim());
+    if (Array.isArray(customHeroPhotos)) {
+      for (const raw of customHeroPhotos) {
+        const clean = raw?.trim();
+        if (clean && !list.includes(clean)) {
+          list.push(clean);
+        }
+      }
     }
-    const defaults = [
-      'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80',
-    ];
-    for (const url of defaults) {
+
+    if (hideDefaultHeroPhotos && list.length > 0) {
+      return list;
+    }
+
+    if (heroPhotoUrl && heroPhotoUrl.trim().length > 0) {
+      const cleanHero = heroPhotoUrl.trim();
+      if (!list.includes(cleanHero)) {
+        list.push(cleanHero);
+      }
+    }
+
+    for (const url of DEFAULT_HERO_PHOTOS) {
       if (!list.includes(url)) {
         list.push(url);
       }
     }
     return list;
-  }, [heroPhotoUrl]);
+  }, [customHeroPhotos, hideDefaultHeroPhotos, heroPhotoUrl]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setCurrentIndex((prev) => (prev >= couplePhotos.length ? 0 : prev));
+  }, [couplePhotos.length]);
 
   useEffect(() => {
     if (couplePhotos.length <= 1 || isHovered) return;
@@ -115,7 +136,7 @@ export const CoupleEditorialPortrait: React.FC<CoupleEditorialPortraitProps> = (
     setCurrentIndex((prev) => (prev + 1) % couplePhotos.length);
   };
 
-  const activeIndex = currentIndex % couplePhotos.length;
+  const activeIndex = couplePhotos.length > 0 ? currentIndex % couplePhotos.length : 0;
   const currentPhoto = couplePhotos[activeIndex];
 
   return (
@@ -159,7 +180,7 @@ export const CoupleEditorialPortrait: React.FC<CoupleEditorialPortraitProps> = (
           const isCurrent = idx === activeIndex;
           return (
             <img
-              key={`${photoUrl}-${idx}`}
+              key={`hero-${idx}-${photoUrl.slice(-24)}`}
               src={photoUrl}
               alt="Jessica Paiz y Jorge Rodas"
               draggable={isCoupleOrAdmin}

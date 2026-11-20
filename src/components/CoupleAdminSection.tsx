@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
   Calendar,
   Check,
   CheckCircle2,
@@ -19,12 +21,16 @@ import {
   Heart,
   ImagePlus,
   KeyRound,
+  Link2,
   Loader2,
   Lock,
   LogOut,
   MailCheck,
   MapPin,
+  Music,
+  Pause,
   Phone,
+  Play,
   Plus,
   QrCode,
   RefreshCw,
@@ -38,6 +44,7 @@ import {
   UserPlus,
   Users,
   Utensils,
+  Volume2,
   X,
 } from 'lucide-react';
 import {
@@ -51,12 +58,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import JSZip from 'jszip';
@@ -69,7 +78,9 @@ import {
 import { SectionCornerFlorals } from './BotanicalArtwork';
 import {
   AUTHORIZED_COUPLE_ACCOUNTS,
+  CustomAudioMode,
   DEFAULT_GODPARENTS_LIST,
+  DEFAULT_HERO_PHOTOS,
   DEFAULT_WEDDING_CONFIG,
   formatTime12h,
   formatWeddingEventDateLabel,
@@ -80,6 +91,7 @@ import {
   GUEST_RELATION_GROUPS,
   GuestQuotaRecord,
   GuestRelationGroup,
+  HeroPhotoRecord,
   isAuthorizedCoupleEmail,
   isValidPhoneKey,
   mergeWeddingConfig,
@@ -111,10 +123,18 @@ import {
   isValidAppsScriptUrl,
 } from '../utils/driveSlideshowExport';
 import { QRCodeSVG } from 'qrcode.react';
-import { compressQrCodeImage } from '../utils/imageCompression';
+import {
+  compressQrCodeImage,
+  compressWeddingPhoto,
+} from '../utils/imageCompression';
+import {
+  assembleAudioBlobUrlFromChunks,
+  formatAudioDuration,
+  prepareAudioFileForUpload,
+} from '../utils/audioStorage';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
-type AdminTab = 'rsvps' | 'quotas' | 'wedding' | 'photos' | 'settings';
+type AdminTab = 'rsvps' | 'quotas' | 'wedding' | 'media' | 'photos' | 'settings';
 
 interface NumericInputProps {
   id?: string;
@@ -397,6 +417,35 @@ export const CoupleAdminSection: React.FC = () => {
   const [isCompressingGiftQr, setIsCompressingGiftQr] = useState(false);
   const [giftQrError, setGiftQrError] = useState('');
 
+  // Hero Carousel & Custom Ambient Music state
+  const [heroPhotosList, setHeroPhotosList] = useState<HeroPhotoRecord[]>([]);
+  const [hideDefaultHeroPhotos, setHideDefaultHeroPhotos] = useState(false);
+  const [uploadingHeroImages, setUploadingHeroImages] = useState(false);
+  const [replacingHeroId, setReplacingHeroId] = useState<string | null>(null);
+  const [newHeroUrlInput, setNewHeroUrlInput] = useState('');
+  const [newHeroCaptionInput, setNewHeroCaptionInput] = useState('');
+  const [heroCaptionDrafts, setHeroCaptionDrafts] = useState<Record<string, string>>({});
+  const [heroMediaError, setHeroMediaError] = useState('');
+  const [heroMediaSuccess, setHeroMediaSuccess] = useState('');
+
+  const [customAudioMode, setCustomAudioMode] = useState<CustomAudioMode>('synth');
+  const [customAudioUrl, setCustomAudioUrl] = useState('');
+  const [customAudioTitle, setCustomAudioTitle] = useState(
+    DEFAULT_WEDDING_CONFIG.customAudioTitle ?? 'Melodía Ambiental Romántica'
+  );
+  const [customAudioMime, setCustomAudioMime] = useState('audio/mpeg');
+  const [customAudioChunkCount, setCustomAudioChunkCount] = useState(0);
+  const [customAudioUpdatedToken, setCustomAudioUpdatedToken] = useState('');
+  const [customAudioDurationSec, setCustomAudioDurationSec] = useState(0);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [audioUploadProgress, setAudioUploadProgress] = useState('');
+  const [audioMediaError, setAudioMediaError] = useState('');
+  const [audioMediaSuccess, setAudioMediaSuccess] = useState('');
+  const [adminPreviewBlobUrl, setAdminPreviewBlobUrl] = useState('');
+  const [isAdminPreviewPlaying, setIsAdminPreviewPlaying] = useState(false);
+  const adminPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const loadedAdminTokenRef = useRef<string>('');
+
   const [savingWeddingDetails, setSavingWeddingDetails] = useState(false);
   const [weddingDetailsSaved, setWeddingDetailsSaved] = useState(false);
   const [weddingDetailsError, setWeddingDetailsError] = useState('');
@@ -408,6 +457,7 @@ export const CoupleAdminSection: React.FC = () => {
   const [copiedAppsScript, setCopiedAppsScript] = useState(false);
 
   // Google Drive archive state (in-memory token only)
+  const AUTO_DRIVE_SYNC_INTERVAL_MS = 10 * 60 * 1000;
   const [driveToken, setDriveToken] = useState<string | null>(() =>
     getDriveAccessToken()
   );
@@ -419,6 +469,23 @@ export const CoupleAdminSection: React.FC = () => {
   const [driveError, setDriveError] = useState('');
   const [driveStatusMsg, setDriveStatusMsg] = useState('');
   const [confirmDriveModalOpen, setConfirmDriveModalOpen] = useState(false);
+  const [autoDriveSyncPref, setAutoDriveSyncPref] = useState<boolean>(() =>
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem('boda_auto_drive_sync') !== 'false'
+      : true
+  );
+  const [driveAutoSyncConfirmed, setDriveAutoSyncConfirmed] = useState(false);
+  const [confirmEnableAutoEvery10Min, setConfirmEnableAutoEvery10Min] =
+    useState(true);
+  const [autoSyncCountdownLabel, setAutoSyncCountdownLabel] = useState('');
+  const [lastAutoDriveSyncLabel, setLastAutoDriveSyncLabel] = useState('');
+
+  const nextAutoDriveSyncAtRef = useRef<number | null>(null);
+  const isSyncingDriveRef = useRef(false);
+  const allPhotosRef = useRef<WeddingPhotoRecord[]>([]);
+  const driveTokenRef = useRef<string | null>(driveToken);
+  const driveFolderIdRef = useRef<string | null>(null);
+  const driveSyncedIdsRef = useRef<Set<string>>(driveSyncedIds);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -638,6 +705,18 @@ export const CoupleAdminSection: React.FC = () => {
           );
           setGiftQrValue(merged.giftQrValue ?? '');
           setGiftQrImage(merged.giftQrImage ?? '');
+          setHideDefaultHeroPhotos(Boolean(merged.hideDefaultHeroPhotos));
+          setCustomAudioMode(merged.customAudioMode ?? 'synth');
+          setCustomAudioUrl(merged.customAudioUrl ?? '');
+          setCustomAudioTitle(
+            merged.customAudioTitle ??
+              DEFAULT_WEDDING_CONFIG.customAudioTitle ??
+              'Melodía Ambiental Romántica'
+          );
+          setCustomAudioMime(merged.customAudioMime ?? 'audio/mpeg');
+          setCustomAudioChunkCount(merged.customAudioChunkCount ?? 0);
+          setCustomAudioUpdatedToken(merged.customAudioUpdatedToken ?? '');
+          setCustomAudioDurationSec(merged.customAudioDurationSec ?? 0);
         }
       },
       (error) => {
@@ -649,11 +728,39 @@ export const CoupleAdminSection: React.FC = () => {
       }
     );
 
+    const unsubHeroPhotos = onSnapshot(
+      collection(db, 'wedding_hero_photos'),
+      (snapshot) => {
+        const list: HeroPhotoRecord[] = snapshot.docs
+          .map((docSnap) => {
+            const d = docSnap.data();
+            return {
+              id: docSnap.id,
+              imageData: String(d.imageData ?? ''),
+              caption: String(d.caption ?? ''),
+              sortOrder: Number(d.sortOrder ?? 0),
+              active: Boolean(d.active ?? true),
+              createdAt: d.createdAt ?? null,
+            };
+          })
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setHeroPhotosList(list);
+      },
+      (error) => {
+        handleFirestoreError(
+          error,
+          OperationType.LIST,
+          'wedding_hero_photos'
+        );
+      }
+    );
+
     return () => {
       unsubRsvps();
       unsubQuotas();
       unsubPhotos();
       unsubConfig();
+      unsubHeroPhotos();
     };
   }, [authReady, isVerifiedCoupleAdmin]);
 
@@ -727,40 +834,66 @@ export const CoupleAdminSection: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
     clearDriveAccessToken();
     setDriveToken(null);
     setDriveEmail(null);
+    setDriveAutoSyncConfirmed(false);
+    nextAutoDriveSyncAtRef.current = null;
     await signOut(auth);
     setIdentifier('');
     setPassword('');
     setAuthError('');
   };
 
+  useEffect(() => {
+    allPhotosRef.current = allPhotos;
+  }, [allPhotos]);
+
+  useEffect(() => {
+    driveTokenRef.current = driveToken;
+  }, [driveToken]);
+
+  useEffect(() => {
+    driveFolderIdRef.current = driveFolderId;
+  }, [driveFolderId]);
+
+  useEffect(() => {
+    driveSyncedIdsRef.current = driveSyncedIds;
+  }, [driveSyncedIds]);
+
   const refreshDriveSyncedFiles = async (
     tokenOverride?: string,
     folderOverride?: string | null
-  ) => {
-    const token = tokenOverride || driveToken || getDriveAccessToken();
-    const folder = folderOverride ?? driveFolderId;
-    if (!token || !folder) return;
+  ): Promise<Set<string> | null> => {
+    const token = tokenOverride || driveTokenRef.current || getDriveAccessToken();
+    const folder = folderOverride ?? driveFolderIdRef.current;
+    if (!token || !folder) return null;
 
     try {
       const files = await listDriveFolderFiles(folder, token);
       const synced = new Set<string>();
-      for (const photo of allPhotos) {
+      for (const photo of allPhotosRef.current) {
         if (files.some((f) => f.name.includes(photo.id))) {
           synced.add(photo.id);
         }
       }
       setDriveSyncedIds(synced);
+      return synced;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('401')) {
         setDriveToken(null);
+        setDriveAutoSyncConfirmed(false);
+        nextAutoDriveSyncAtRef.current = null;
         setDriveError(
-          'Tu sesión de Google Drive expiró; vuelve a conectarte con Google.'
+          'Tu sesión de Google Drive expiró (~1 h); presiona Sign in with Google para reconectar y reanudar el respaldo automático.'
         );
       }
+      return null;
     }
   };
 
@@ -834,25 +967,53 @@ export const CoupleAdminSection: React.FC = () => {
     [allPhotos, driveSyncedIds]
   );
 
-  const handleSyncAllPendingToDrive = async () => {
-    setConfirmDriveModalOpen(false);
-    const token = driveToken || getDriveAccessToken();
-    if (!token || !driveFolderId || pendingDrivePhotos.length === 0) return;
+  const runDriveBackupPass = async (options?: { isScheduled?: boolean }) => {
+    if (isSyncingDriveRef.current) return;
+    const token = driveTokenRef.current || getDriveAccessToken();
+    const folder = driveFolderIdRef.current;
+    if (!token || !folder) return;
 
-    setDriveError('');
-    setDriveStatusMsg('');
+    isSyncingDriveRef.current = true;
     setIsSyncingDrive(true);
+    setDriveError('');
     let uploadedCount = 0;
 
     try {
-      for (let i = 0; i < pendingDrivePhotos.length; i++) {
-        const photo = pendingDrivePhotos[i];
+      // Refresh Drive listing first so we never upload duplicates
+      const refreshedSet = await refreshDriveSyncedFiles(token, folder);
+      const currentSynced = refreshedSet ?? driveSyncedIdsRef.current;
+      const pendingList = allPhotosRef.current.filter(
+        (p) => !currentSynced.has(p.id)
+      );
+
+      const nowTime = new Date().toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      if (pendingList.length === 0) {
+        if (options?.isScheduled) {
+          setLastAutoDriveSyncLabel(
+            `Última revisión automática: ${nowTime} · Todo al día`
+          );
+        } else {
+          setDriveStatusMsg(
+            `Todas las fotografías (${allPhotosRef.current.length}) ya están respaldadas en Google Drive.`
+          );
+        }
+        return;
+      }
+
+      for (let i = 0; i < pendingList.length; i++) {
+        const photo = pendingList[i];
         setDriveSyncProgress(
-          `Subiendo ${i + 1} de ${pendingDrivePhotos.length}...`
+          options?.isScheduled
+            ? `Respaldo automático: subiendo ${i + 1} de ${pendingList.length}...`
+            : `Subiendo ${i + 1} de ${pendingList.length}...`
         );
         const blob = dataUrlToBlob(photo.imageData);
         await uploadBlobToGoogleDriveFolder({
-          folderId: driveFolderId,
+          folderId: folder,
           accessToken: token,
           fileName: buildDrivePhotoFilename(photo),
           blob,
@@ -864,6 +1025,11 @@ export const CoupleAdminSection: React.FC = () => {
         setDriveSyncedIds((prev) => new Set(prev).add(photo.id));
       }
 
+      if (options?.isScheduled) {
+        setLastAutoDriveSyncLabel(
+          `Último respaldo automático: ${nowTime} (+${uploadedCount} foto${uploadedCount === 1 ? '' : 's'})`
+        );
+      }
       setDriveStatusMsg(
         `¡Listo! Se archivaron ${uploadedCount} fotografía(s) en tu carpeta de Google Drive.`
       );
@@ -871,17 +1037,114 @@ export const CoupleAdminSection: React.FC = () => {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('401')) {
         setDriveToken(null);
-        setDriveError('Tu sesión expiró; vuelve a conectar Google Drive.');
+        setDriveAutoSyncConfirmed(false);
+        nextAutoDriveSyncAtRef.current = null;
+        setDriveError(
+          'Tu sesión de Google Drive expiró (~1 h); vuelve a presionar Sign in with Google para reanudar el respaldo automático.'
+        );
       } else {
         setDriveError(
           `Se subieron ${uploadedCount} foto(s), pero ocurrió un error de permisos o conexión con Google Drive.`
         );
       }
     } finally {
+      isSyncingDriveRef.current = false;
       setIsSyncingDrive(false);
       setDriveSyncProgress('');
     }
   };
+
+  const handleOpenConfirmDriveModal = (preferAutoSync = true) => {
+    setConfirmEnableAutoEvery10Min(preferAutoSync ? true : autoDriveSyncPref);
+    setConfirmDriveModalOpen(true);
+  };
+
+  const handleSyncAllPendingToDrive = async () => {
+    setConfirmDriveModalOpen(false);
+    if (confirmEnableAutoEvery10Min) {
+      setAutoDriveSyncPref(true);
+      setDriveAutoSyncConfirmed(true);
+      nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('boda_auto_drive_sync', 'true');
+      }
+    } else {
+      setAutoDriveSyncPref(false);
+      setDriveAutoSyncConfirmed(false);
+      nextAutoDriveSyncAtRef.current = null;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('boda_auto_drive_sync', 'false');
+      }
+    }
+
+    await runDriveBackupPass({ isScheduled: false });
+  };
+
+  const handleToggleAutoDriveSync = () => {
+    if (autoDriveSyncPref && driveAutoSyncConfirmed) {
+      setAutoDriveSyncPref(false);
+      nextAutoDriveSyncAtRef.current = null;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('boda_auto_drive_sync', 'false');
+      }
+      return;
+    }
+
+    if (!driveAutoSyncConfirmed) {
+      handleOpenConfirmDriveModal(true);
+      return;
+    }
+
+    setAutoDriveSyncPref(true);
+    nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('boda_auto_drive_sync', 'true');
+    }
+  };
+
+  const isAutoDriveSyncRunning = Boolean(
+    isVerifiedCoupleAdmin &&
+      driveToken &&
+      driveFolderId &&
+      autoDriveSyncPref &&
+      driveAutoSyncConfirmed
+  );
+
+  // Automatic 10-minute scheduler for Google Drive backup
+  useEffect(() => {
+    if (!isAutoDriveSyncRunning) {
+      nextAutoDriveSyncAtRef.current = null;
+      setAutoSyncCountdownLabel('');
+      return;
+    }
+
+    if (!nextAutoDriveSyncAtRef.current) {
+      nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
+    }
+
+    const tick = window.setInterval(() => {
+      const targetAt =
+        nextAutoDriveSyncAtRef.current ??
+        Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
+      const remainingMs = Math.max(0, targetAt - Date.now());
+      const totalSec = Math.ceil(remainingMs / 1000);
+      const mins = Math.floor(totalSec / 60);
+      const secs = totalSec % 60;
+      setAutoSyncCountdownLabel(
+        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+      );
+
+      if (remainingMs <= 0) {
+        nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
+        void runDriveBackupPass({ isScheduled: true });
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoDriveSyncRunning]);
 
   const stats = useMemo(() => {
     const confirmed = rsvps.filter((r) => r.attending);
@@ -1448,7 +1711,18 @@ export const CoupleAdminSection: React.FC = () => {
     }
   };
 
-  const buildPersistedSettingsPayload = () => {
+  const buildPersistedSettingsPayload = (
+    overrides?: Partial<{
+      hideDefaultHeroPhotos: boolean;
+      customAudioMode: CustomAudioMode;
+      customAudioUrl: string;
+      customAudioTitle: string;
+      customAudioMime: string;
+      customAudioChunkCount: number;
+      customAudioUpdatedToken: string;
+      customAudioDurationSec: number;
+    }>
+  ) => {
     const trimmedUrl = googlePhotosUrl.trim().slice(0, 500);
     const trimmedScriptUrl = appsScriptUrl.trim().slice(0, 500);
     const safeCeremonyTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(ceremonyTime)
@@ -1469,6 +1743,38 @@ export const CoupleAdminSection: React.FC = () => {
       }))
       .filter((item) => item.roleName.length > 0 && item.names.length > 0)
       .slice(0, 12);
+
+    const resolvedAudioMode = overrides?.customAudioMode ?? customAudioMode;
+    const resolvedAudioUrl = (overrides?.customAudioUrl ?? customAudioUrl)
+      .trim()
+      .slice(0, 500);
+    const resolvedAudioTitle =
+      (overrides?.customAudioTitle ?? customAudioTitle).trim().slice(0, 120) ||
+      'Melodía Ambiental Romántica';
+    const resolvedAudioMime =
+      (overrides?.customAudioMime ?? customAudioMime).trim().slice(0, 80) ||
+      'audio/mpeg';
+    const resolvedAudioChunkCount = Math.min(
+      25,
+      Math.max(
+        0,
+        Number(overrides?.customAudioChunkCount ?? customAudioChunkCount) || 0
+      )
+    );
+    const resolvedAudioToken = (
+      overrides?.customAudioUpdatedToken ?? customAudioUpdatedToken
+    )
+      .trim()
+      .slice(0, 64);
+    const resolvedAudioDuration = Math.min(
+      3600,
+      Math.max(
+        0,
+        Math.round(
+          Number(overrides?.customAudioDurationSec ?? customAudioDurationSec) || 0
+        )
+      )
+    );
 
     return {
       googlePhotosUrl: trimmedUrl,
@@ -1528,6 +1834,16 @@ export const CoupleAdminSection: React.FC = () => {
         (DEFAULT_WEDDING_CONFIG.giftAccountNumber ?? ''),
       giftQrValue: giftQrValue.trim().slice(0, 500),
       giftQrImage: giftQrImage.trim(),
+      hideDefaultHeroPhotos:
+        overrides?.hideDefaultHeroPhotos ?? hideDefaultHeroPhotos,
+      customAudioMode: resolvedAudioMode,
+      customAudioUrl:
+        resolvedAudioUrl.startsWith('https://') ? resolvedAudioUrl : '',
+      customAudioTitle: resolvedAudioTitle,
+      customAudioMime: resolvedAudioMime,
+      customAudioChunkCount: resolvedAudioChunkCount,
+      customAudioUpdatedToken: resolvedAudioToken,
+      customAudioDurationSec: resolvedAudioDuration,
       updatedAt: serverTimestamp(),
     };
   };
@@ -1689,6 +2005,555 @@ export const CoupleAdminSection: React.FC = () => {
     } finally {
       setIsCompressingGiftQr(false);
       e.target.value = '';
+    }
+  };
+
+  // --- HERO CAROUSEL IMAGE HANDLERS ---
+  const handleUploadHeroImages = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList).slice(0, 10);
+    setHeroMediaError('');
+    setHeroMediaSuccess('');
+    setUploadingHeroImages(true);
+
+    try {
+      const baseOrder =
+        heroPhotosList.length > 0
+          ? Math.max(...heroPhotosList.map((p) => p.sortOrder)) + 1
+          : 0;
+      const hadZeroPhotos = heroPhotosList.length === 0;
+      let uploadedCount = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const compressed = await compressWeddingPhoto(files[i]);
+        const photoId = `hero_${Date.now()}_${i}_${Math.random()
+          .toString(36)
+          .slice(2, 6)}`;
+        await setDoc(doc(db, 'wedding_hero_photos', photoId), {
+          id: photoId,
+          imageData: compressed.imageData,
+          caption: '',
+          sortOrder: Math.min(100, baseOrder + i),
+          active: true,
+          createdAt: serverTimestamp(),
+        });
+        uploadedCount += 1;
+      }
+
+      if (hadZeroPhotos && !hideDefaultHeroPhotos) {
+        setHideDefaultHeroPhotos(true);
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          buildPersistedSettingsPayload({ hideDefaultHeroPhotos: true })
+        );
+      }
+
+      setHeroMediaSuccess(
+        uploadedCount === 1
+          ? 'Imagen agregada al carrusel de portada.'
+          : `${uploadedCount} imágenes agregadas al carrusel de portada.`
+      );
+      window.setTimeout(() => setHeroMediaSuccess(''), 4000);
+    } catch (err) {
+      setHeroMediaError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudieron subir las imágenes en este momento.'
+      );
+    } finally {
+      setUploadingHeroImages(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAddHeroImageByUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setHeroMediaError('');
+    setHeroMediaSuccess('');
+
+    const cleanUrl = newHeroUrlInput.trim().slice(0, 500);
+    if (!cleanUrl.startsWith('https://')) {
+      setHeroMediaError(
+        'El enlace de la imagen debe comenzar con https:// (o súbela directamente desde tu dispositivo).'
+      );
+      return;
+    }
+
+    setUploadingHeroImages(true);
+    try {
+      const nextOrder =
+        heroPhotosList.length > 0
+          ? Math.min(100, Math.max(...heroPhotosList.map((p) => p.sortOrder)) + 1)
+          : 0;
+      const hadZeroPhotos = heroPhotosList.length === 0;
+      const photoId = `hero_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+
+      await setDoc(doc(db, 'wedding_hero_photos', photoId), {
+        id: photoId,
+        imageData: cleanUrl,
+        caption: newHeroCaptionInput.trim().slice(0, 120),
+        sortOrder: nextOrder,
+        active: true,
+        createdAt: serverTimestamp(),
+      });
+
+      if (hadZeroPhotos && !hideDefaultHeroPhotos) {
+        setHideDefaultHeroPhotos(true);
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          buildPersistedSettingsPayload({ hideDefaultHeroPhotos: true })
+        );
+      }
+
+      setNewHeroUrlInput('');
+      setNewHeroCaptionInput('');
+      setHeroMediaSuccess('Imagen agregada al carrusel de portada.');
+      window.setTimeout(() => setHeroMediaSuccess(''), 4000);
+    } catch (error) {
+      try {
+        handleFirestoreError(
+          error,
+          OperationType.CREATE,
+          'wedding_hero_photos'
+        );
+      } catch {
+        setHeroMediaError('No se pudo guardar el enlace de la imagen.');
+      }
+    } finally {
+      setUploadingHeroImages(false);
+    }
+  };
+
+  const handleReplaceHeroImageFile = async (
+    photo: HeroPhotoRecord,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setHeroMediaError('');
+    setHeroMediaSuccess('');
+    setReplacingHeroId(photo.id);
+
+    try {
+      const compressed = await compressWeddingPhoto(file);
+      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+        imageData: compressed.imageData,
+      });
+      setHeroMediaSuccess('Fotografía actualizada correctamente.');
+      window.setTimeout(() => setHeroMediaSuccess(''), 3500);
+    } catch (err) {
+      setHeroMediaError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo reemplazar la fotografía.'
+      );
+    } finally {
+      setReplacingHeroId(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleSaveHeroCaption = async (photo: HeroPhotoRecord) => {
+    const nextCaption = (
+      heroCaptionDrafts[photo.id] ?? photo.caption
+    )
+      .trim()
+      .slice(0, 120);
+    try {
+      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+        caption: nextCaption,
+      });
+      setHeroMediaSuccess('Título de foto guardado.');
+      window.setTimeout(() => setHeroMediaSuccess(''), 2500);
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `wedding_hero_photos/${photo.id}`
+      );
+    }
+  };
+
+  const handleToggleHeroPhotoActive = async (photo: HeroPhotoRecord) => {
+    try {
+      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+        active: !photo.active,
+      });
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `wedding_hero_photos/${photo.id}`
+      );
+    }
+  };
+
+  const handleMoveHeroPhoto = async (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= heroPhotosList.length) return;
+
+    const reordered = [...heroPhotosList];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    try {
+      const batch = writeBatch(db);
+      reordered.forEach((item, idx) => {
+        batch.update(doc(db, 'wedding_hero_photos', item.id), {
+          sortOrder: idx,
+        });
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        'wedding_hero_photos'
+      );
+    }
+  };
+
+  const handleDeleteHeroPhoto = async (photoId: string) => {
+    try {
+      await deleteDoc(doc(db, 'wedding_hero_photos', photoId));
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.DELETE,
+        `wedding_hero_photos/${photoId}`
+      );
+    }
+  };
+
+  const handleToggleHideDefaultHeroPhotos = async (nextHide: boolean) => {
+    setHideDefaultHeroPhotos(nextHide);
+    setHeroMediaError('');
+    try {
+      await setDoc(
+        doc(db, 'wedding_settings', 'main'),
+        buildPersistedSettingsPayload({ hideDefaultHeroPhotos: nextHide })
+      );
+    } catch (error) {
+      try {
+        handleFirestoreError(
+          error,
+          OperationType.WRITE,
+          'wedding_settings/main'
+        );
+      } catch {
+        setHeroMediaError('No se pudo actualizar la preferencia del carrusel.');
+      }
+    }
+  };
+
+  // --- AMBIENT AUDIO HANDLERS ---
+  useEffect(() => {
+    let cancelled = false;
+    if (customAudioMode !== 'uploaded' || !customAudioUpdatedToken) {
+      loadedAdminTokenRef.current = '';
+      setAdminPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+      return;
+    }
+
+    if (loadedAdminTokenRef.current === customAudioUpdatedToken) {
+      return;
+    }
+
+    const loadPreviewChunks = async () => {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'wedding_audio_chunks'),
+            where('trackToken', '==', customAudioUpdatedToken)
+          )
+        );
+        if (cancelled || snap.empty) return;
+        const chunks = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            index: Number(data.index ?? 0),
+            data: String(data.data ?? ''),
+            mimeType: String(data.mimeType ?? customAudioMime),
+          };
+        });
+        const nextUrl = assembleAudioBlobUrlFromChunks(chunks, customAudioMime);
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        loadedAdminTokenRef.current = customAudioUpdatedToken;
+        setAdminPreviewBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return nextUrl;
+        });
+      } catch {
+        // Ignore preview preload errors
+      }
+    };
+
+    void loadPreviewChunks();
+    return () => {
+      cancelled = true;
+    };
+  }, [customAudioMode, customAudioUpdatedToken, customAudioMime]);
+
+  useEffect(() => {
+    return () => {
+      if (adminPreviewAudioRef.current) {
+        adminPreviewAudioRef.current.pause();
+      }
+      setAdminPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+  }, []);
+
+  const cleanupOldAudioChunks = async (keepToken: string) => {
+    try {
+      const existingSnap = await getDocs(collection(db, 'wedding_audio_chunks'));
+      const toDelete = existingSnap.docs.filter(
+        (d) => String(d.data().trackToken ?? '') !== keepToken
+      );
+      for (let i = 0; i < toDelete.length; i += 400) {
+        const batch = writeBatch(db);
+        toDelete.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    } catch {
+      // Non-critical cleanup failure
+    }
+  };
+
+  const handleAudioFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAudioMediaError('');
+    setAudioMediaSuccess('');
+    setUploadingAudio(true);
+    setAudioUploadProgress('Validando archivo de audio...');
+
+    let createdPreviewUrl = '';
+    try {
+      const prepared = await prepareAudioFileForUpload(file);
+      createdPreviewUrl = prepared.previewUrl;
+      const trackToken = `track_${Date.now()}`;
+
+      for (let i = 0; i < prepared.chunks.length; i++) {
+        setAudioUploadProgress(
+          `Subiendo audio a la nube (${i + 1} de ${prepared.chunks.length})...`
+        );
+        const chunkId = `${trackToken}_${i}`;
+        await setDoc(doc(db, 'wedding_audio_chunks', chunkId), {
+          id: chunkId,
+          trackToken,
+          index: i,
+          totalChunks: prepared.chunks.length,
+          mimeType: prepared.mimeType,
+          data: prepared.chunks[i],
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      setAudioUploadProgress('Activando música en la invitación...');
+      await setDoc(
+        doc(db, 'wedding_settings', 'main'),
+        buildPersistedSettingsPayload({
+          customAudioMode: 'uploaded',
+          customAudioTitle: prepared.title,
+          customAudioMime: prepared.mimeType,
+          customAudioChunkCount: prepared.chunks.length,
+          customAudioUpdatedToken: trackToken,
+          customAudioDurationSec: prepared.durationSec,
+        })
+      );
+
+      loadedAdminTokenRef.current = trackToken;
+      setAdminPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return prepared.previewUrl;
+      });
+      createdPreviewUrl = '';
+      setCustomAudioMode('uploaded');
+      setCustomAudioTitle(prepared.title);
+      setCustomAudioMime(prepared.mimeType);
+      setCustomAudioChunkCount(prepared.chunks.length);
+      setCustomAudioUpdatedToken(trackToken);
+      setCustomAudioDurationSec(prepared.durationSec);
+
+      void cleanupOldAudioChunks(trackToken);
+      setAudioMediaSuccess(
+        `¡Audio "${prepared.title}" subido y activado! Todos los invitados escucharán esta canción al abrir la invitación.`
+      );
+      window.setTimeout(() => setAudioMediaSuccess(''), 5500);
+    } catch (err) {
+      if (createdPreviewUrl) {
+        URL.revokeObjectURL(createdPreviewUrl);
+      }
+      setAudioMediaError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo subir el archivo de audio.'
+      );
+    } finally {
+      setUploadingAudio(false);
+      setAudioUploadProgress('');
+      e.target.value = '';
+    }
+  };
+
+  const handleSaveCustomAudioUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAudioMediaError('');
+    setAudioMediaSuccess('');
+
+    const cleanUrl = customAudioUrl.trim().slice(0, 500);
+    if (!cleanUrl.startsWith('https://')) {
+      setAudioMediaError(
+        'El enlace de audio debe comenzar con https:// (por ejemplo, un enlace directo a un archivo .mp3).'
+      );
+      return;
+    }
+
+    setUploadingAudio(true);
+    try {
+      const nextTitle =
+        customAudioTitle.trim().slice(0, 120) || 'Música Personalizada';
+      await setDoc(
+        doc(db, 'wedding_settings', 'main'),
+        buildPersistedSettingsPayload({
+          customAudioMode: 'url',
+          customAudioUrl: cleanUrl,
+          customAudioTitle: nextTitle,
+        })
+      );
+      setCustomAudioMode('url');
+      setCustomAudioTitle(nextTitle);
+      setAudioMediaSuccess('Enlace de música guardado y activado.');
+      window.setTimeout(() => setAudioMediaSuccess(''), 4000);
+    } catch (error) {
+      try {
+        handleFirestoreError(
+          error,
+          OperationType.WRITE,
+          'wedding_settings/main'
+        );
+      } catch {
+        setAudioMediaError('No se pudo guardar el enlace de audio.');
+      }
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
+  const handleUseSynthAudio = async () => {
+    setAudioMediaError('');
+    setAudioMediaSuccess('');
+    setUploadingAudio(true);
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
+    try {
+      await setDoc(
+        doc(db, 'wedding_settings', 'main'),
+        buildPersistedSettingsPayload({
+          customAudioMode: 'synth',
+        })
+      );
+      setCustomAudioMode('synth');
+      setAudioMediaSuccess('Melodía ambiental romántica integrada activada.');
+      window.setTimeout(() => setAudioMediaSuccess(''), 3500);
+    } catch (error) {
+      try {
+        handleFirestoreError(
+          error,
+          OperationType.WRITE,
+          'wedding_settings/main'
+        );
+      } catch {
+        setAudioMediaError('No se pudo cambiar la configuración de audio.');
+      }
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
+  const handleDeleteUploadedAudio = async () => {
+    setAudioMediaError('');
+    setAudioMediaSuccess('');
+    setUploadingAudio(true);
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
+    try {
+      await cleanupOldAudioChunks('__none__');
+      await setDoc(
+        doc(db, 'wedding_settings', 'main'),
+        buildPersistedSettingsPayload({
+          customAudioMode: customAudioUrl.startsWith('https://')
+            ? 'url'
+            : 'synth',
+          customAudioTitle: 'Melodía Ambiental Romántica',
+          customAudioMime: 'audio/mpeg',
+          customAudioChunkCount: 0,
+          customAudioUpdatedToken: '',
+          customAudioDurationSec: 0,
+        })
+      );
+      setAdminPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+      loadedAdminTokenRef.current = '';
+      setCustomAudioChunkCount(0);
+      setCustomAudioUpdatedToken('');
+      setCustomAudioDurationSec(0);
+      setAudioMediaSuccess('Audio subido eliminado de la nube.');
+      window.setTimeout(() => setAudioMediaSuccess(''), 3500);
+    } catch (error) {
+      try {
+        handleFirestoreError(
+          error,
+          OperationType.DELETE,
+          'wedding_audio_chunks'
+        );
+      } catch {
+        setAudioMediaError('No se pudo eliminar el audio guardado.');
+      }
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
+  const handleToggleAdminAudioPreview = async () => {
+    const el = adminPreviewAudioRef.current;
+    if (!el) return;
+    if (isAdminPreviewPlaying) {
+      el.pause();
+      setIsAdminPreviewPlaying(false);
+    } else {
+      try {
+        await el.play();
+        setIsAdminPreviewPlaying(true);
+      } catch {
+        setAudioMediaError(
+          'No se pudo reproducir la vista previa en este navegador.'
+        );
+      }
     }
   };
 
@@ -2027,6 +2892,18 @@ export const CoupleAdminSection: React.FC = () => {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('media')}
+                className={`flex-1 sm:flex-initial px-3 sm:px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer text-center whitespace-nowrap inline-flex items-center justify-center gap-1.5 ${
+                  activeTab === 'media'
+                    ? 'bg-white text-[#2c3e35] shadow-xs'
+                    : 'text-[#2c3e35]/65 hover:text-[#2c3e35]'
+                }`}
+              >
+                <Music className="w-3.5 h-3.5 shrink-0 text-[#b89753]" />
+                <span>Portada y Música</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('photos')}
                 className={`flex-1 sm:flex-initial px-3 sm:px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer text-center whitespace-nowrap ${
                   activeTab === 'photos'
@@ -2049,6 +2926,511 @@ export const CoupleAdminSection: React.FC = () => {
                 <span>Google Drive y Ajustes</span>
               </button>
             </div>
+
+            {/* TAB: HERO CAROUSEL IMAGES & AMBIENT MUSIC */}
+            {activeTab === 'media' && (
+              <div className="space-y-6 max-w-4xl">
+                {/* CARD 1: HERO CAROUSEL IMAGES */}
+                <div className="bg-white border border-[#b89753]/30 rounded-2xl p-6 shadow-xs space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center shrink-0">
+                        <ImagePlus className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                          Carrusel de Inicio y Pantalla del Sobre
+                        </p>
+                        <h3 className="font-serif text-2xl font-semibold text-[#2c3e35]">
+                          Imágenes de Portada ({heroPhotosList.filter((p) => p.active).length} activas)
+                        </h3>
+                      </div>
+                    </div>
+
+                    <label
+                      className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#b89753] hover:bg-[#967739] text-white text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+                        uploadingHeroImages ? 'opacity-60 pointer-events-none' : ''
+                      }`}
+                    >
+                      {uploadingHeroImages ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                      <span>
+                        {uploadingHeroImages
+                          ? 'Subiendo imagen...'
+                          : 'Subir Imágenes Directamente'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={uploadingHeroImages}
+                        onChange={(e) => void handleUploadHeroImages(e)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <p className="text-xs text-[#2c3e35]/75 leading-relaxed">
+                    Sube las fotografías de los novios directamente desde tu teléfono o computadora (puedes seleccionar varias a la vez). La primera imagen visible también se usa como fondo difuminado en el sobre de bienvenida.
+                  </p>
+
+                  {/* Default stock photos visibility toggle */}
+                  <div className="rounded-xl bg-[#f7f5f0] border border-[#b89753]/25 p-3.5 flex items-start gap-3">
+                    <input
+                      id="hideDefaultHeroPhotosToggle"
+                      type="checkbox"
+                      checked={!hideDefaultHeroPhotos}
+                      onChange={(e) =>
+                        void handleToggleHideDefaultHeroPhotos(!e.target.checked)
+                      }
+                      className="mt-0.5 h-4 w-4 accent-[#b89753] rounded cursor-pointer"
+                    />
+                    <label
+                      htmlFor="hideDefaultHeroPhotosToggle"
+                      className="text-xs text-[#2c3e35] cursor-pointer leading-relaxed"
+                    >
+                      <span className="font-semibold block">
+                        Incluir también las {DEFAULT_HERO_PHOTOS.length} fotos de muestra por defecto
+                      </span>
+                      <span className="text-[#2c3e35]/65">
+                        Desmarca esta casilla cuando ya hayas subido tus propias fotos para mostrar únicamente tus imágenes en el carrusel. (Si no hay fotos propias activas, se mostrarán las de muestra automáticamente).
+                      </span>
+                    </label>
+                  </div>
+
+                  {heroMediaError && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5">
+                      {heroMediaError}
+                    </p>
+                  )}
+
+                  {heroMediaSuccess && (
+                    <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{heroMediaSuccess}</span>
+                    </p>
+                  )}
+
+                  {/* Uploaded / Custom Hero Photos List */}
+                  {heroPhotosList.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[#b89753]/40 bg-[#fcfbf9] p-6 text-center space-y-2">
+                      <ImagePlus className="w-7 h-7 text-[#b89753] mx-auto" />
+                      <p className="text-sm font-medium text-[#2c3e35]">
+                        Aún no has subido imágenes personalizadas de portada
+                      </p>
+                      <p className="text-xs text-[#2c3e35]/65">
+                        Usa el botón dorado &ldquo;Subir Imágenes Directamente&rdquo; arriba o agrega un enlace debajo.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {heroPhotosList.map((photo, idx) => (
+                        <div
+                          key={photo.id}
+                          className={`rounded-xl border p-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3.5 transition-colors ${
+                            photo.active
+                              ? 'bg-[#fcfbf9] border-[#b89753]/35'
+                              : 'bg-neutral-50 border-neutral-200 opacity-75'
+                          }`}
+                        >
+                          <div className="relative w-full sm:w-28 h-36 sm:h-20 rounded-lg overflow-hidden border border-[#b89753]/30 bg-[#141d18] shrink-0">
+                            <img
+                              src={photo.imageData}
+                              alt={photo.caption || `Foto portada ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/65 text-white text-[10px] font-semibold">
+                              #{idx + 1}
+                            </span>
+                          </div>
+
+                          <div className="flex-1 w-full space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="text"
+                                maxLength={120}
+                                value={
+                                  heroCaptionDrafts[photo.id] ?? photo.caption
+                                }
+                                onChange={(e) =>
+                                  setHeroCaptionDrafts((prev) => ({
+                                    ...prev,
+                                    [photo.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Título o nota interna opcional (ej. Sesión en la playa)"
+                                className="flex-1 min-w-[180px] h-9 bg-white border border-[#b89753]/35 rounded-lg px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveHeroCaption(photo)}
+                                className="px-3 h-9 rounded-lg border border-[#b89753]/40 bg-white hover:bg-[#f7f5f0] text-[11px] font-semibold text-[#2c3e35] cursor-pointer"
+                              >
+                                Guardar nota
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <label
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#b89753]/45 bg-white hover:bg-[#f7f5f0] text-[11px] font-semibold text-[#2c3e35] cursor-pointer ${
+                                  replacingHeroId === photo.id
+                                    ? 'opacity-60 pointer-events-none'
+                                    : ''
+                                }`}
+                              >
+                                {replacingHeroId === photo.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Upload className="w-3 h-3 text-[#b89753]" />
+                                )}
+                                <span>Cambiar imagen</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={replacingHeroId === photo.id}
+                                  onChange={(e) =>
+                                    void handleReplaceHeroImageFile(photo, e)
+                                  }
+                                  className="hidden"
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleToggleHeroPhotoActive(photo)
+                                }
+                                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer ${
+                                  photo.active
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                    : 'bg-white text-[#2c3e35]/70 border border-[#2c3e35]/20'
+                                }`}
+                              >
+                                {photo.active ? (
+                                  <>
+                                    <Eye className="w-3 h-3" />
+                                    <span>Visible</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <EyeOff className="w-3 h-3" />
+                                    <span>Oculta</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <div className="inline-flex items-center gap-1 ml-auto">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() =>
+                                    void handleMoveHeroPhoto(idx, -1)
+                                  }
+                                  aria-label="Mover imagen arriba"
+                                  title="Subir posición"
+                                  className="p-1.5 rounded-lg border border-[#b89753]/30 bg-white text-[#2c3e35] disabled:opacity-35 hover:bg-[#f7f5f0] cursor-pointer"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === heroPhotosList.length - 1}
+                                  onClick={() =>
+                                    void handleMoveHeroPhoto(idx, 1)
+                                  }
+                                  aria-label="Mover imagen abajo"
+                                  title="Bajar posición"
+                                  className="p-1.5 rounded-lg border border-[#b89753]/30 bg-white text-[#2c3e35] disabled:opacity-35 hover:bg-[#f7f5f0] cursor-pointer"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleDeleteHeroPhoto(photo.id)
+                                  }
+                                  aria-label="Eliminar imagen de portada"
+                                  title="Eliminar imagen"
+                                  className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Optional Add Hero Photo by HTTPS URL */}
+                  <form
+                    onSubmit={(e) => void handleAddHeroImageByUrl(e)}
+                    className="pt-3 border-t border-[#b89753]/20 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-end"
+                  >
+                    <div className="flex-1">
+                      <label
+                        htmlFor="newHeroUrlInput"
+                        className="block text-[11px] font-medium text-[#2c3e35]/80 mb-1"
+                      >
+                        O añadir imagen por enlace HTTPS (opcional)
+                      </label>
+                      <input
+                        id="newHeroUrlInput"
+                        type="url"
+                        maxLength={500}
+                        value={newHeroUrlInput}
+                        onChange={(e) => setNewHeroUrlInput(e.target.value)}
+                        placeholder="https://... enlace directo de fotografía"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+                    <div className="sm:w-48">
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={newHeroCaptionInput}
+                        onChange={(e) => setNewHeroCaptionInput(e.target.value)}
+                        placeholder="Nota opcional"
+                        className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={uploadingHeroImages || !newHeroUrlInput.trim()}
+                      className="h-10 px-4 rounded-xl bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer whitespace-nowrap inline-flex items-center justify-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-[#b89753]" />
+                      <span>Agregar URL</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* CARD 2: AMBIENT MUSIC / CUSTOM AUDIO UPLOAD */}
+                <div className="bg-white border border-[#b89753]/30 rounded-2xl p-6 shadow-xs space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center shrink-0">
+                        <Volume2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                          Botón Flotante &ldquo;Música activa&rdquo;
+                        </p>
+                        <h3 className="font-serif text-2xl font-semibold text-[#2c3e35]">
+                          Audio y Música de la Invitación
+                        </h3>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold self-start sm:self-center ${
+                        customAudioMode === 'uploaded'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : customAudioMode === 'url'
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : 'bg-[#f7f5f0] text-[#2c3e35] border border-[#b89753]/35'
+                      }`}
+                    >
+                      <Music className="w-3.5 h-3.5 text-[#b89753]" />
+                      <span>
+                        {customAudioMode === 'uploaded'
+                          ? 'Archivo subido activo'
+                          : customAudioMode === 'url'
+                            ? 'Enlace directo activo'
+                            : 'Melodía integrada activa'}
+                      </span>
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-[#2c3e35]/75 leading-relaxed">
+                    Sube directamente la canción o melodía que deseas que se reproduzca automáticamente cuando tus invitados abran el sobre de invitación (formatos MP3, M4A, AAC, OGG o WAV, hasta 6.2 MB).
+                  </p>
+
+                  {/* Upload File Box */}
+                  <div className="rounded-xl bg-[#f7f5f0] border border-[#b89753]/30 p-4 sm:p-5 space-y-3.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#2c3e35]">
+                          Subir archivo de audio desde tu dispositivo
+                        </p>
+                        <p className="text-xs text-[#2c3e35]/70 mt-0.5">
+                          {customAudioUpdatedToken
+                            ? `Archivo actual: ${customAudioTitle}${
+                                customAudioDurationSec > 0
+                                  ? ` · ${formatAudioDuration(customAudioDurationSec)}`
+                                  : ''
+                              }`
+                            : 'Ningún archivo de audio propio cargado todavía.'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#b89753] hover:bg-[#967739] text-white text-xs font-semibold cursor-pointer transition-colors ${
+                            uploadingAudio ? 'opacity-60 pointer-events-none' : ''
+                          }`}
+                        >
+                          {uploadingAudio ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          <span>
+                            {customAudioUpdatedToken
+                              ? 'Cambiar Archivo de Audio'
+                              : 'Subir Archivo de Audio'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.webm"
+                            disabled={uploadingAudio}
+                            onChange={(e) => void handleAudioFileUpload(e)}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {customAudioUpdatedToken && (
+                          <button
+                            type="button"
+                            disabled={uploadingAudio}
+                            onClick={() => void handleDeleteUploadedAudio()}
+                            className="inline-flex items-center gap-1 px-3.5 py-2.5 rounded-full border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Eliminar audio</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {audioUploadProgress && (
+                      <p className="text-xs font-medium text-[#b89753] flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{audioUploadProgress}</span>
+                      </p>
+                    )}
+
+                    {/* Inline Admin Audio Preview Player */}
+                    {((customAudioMode === 'uploaded' && adminPreviewBlobUrl) ||
+                      (customAudioMode === 'url' &&
+                        customAudioUrl.startsWith('https://'))) && (
+                      <div className="rounded-xl bg-white border border-[#b89753]/30 p-3 flex flex-wrap items-center justify-between gap-3">
+                        <audio
+                          ref={adminPreviewAudioRef}
+                          src={
+                            customAudioMode === 'uploaded'
+                              ? adminPreviewBlobUrl
+                              : customAudioUrl
+                          }
+                          onEnded={() => setIsAdminPreviewPlaying(false)}
+                          onPause={() => setIsAdminPreviewPlaying(false)}
+                          onPlay={() => setIsAdminPreviewPlaying(true)}
+                          className="hidden"
+                        />
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleAdminAudioPreview()}
+                            className="w-9 h-9 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] text-white flex items-center justify-center shrink-0 cursor-pointer"
+                            aria-label={
+                              isAdminPreviewPlaying
+                                ? 'Pausar vista previa'
+                                : 'Escuchar vista previa'
+                            }
+                          >
+                            {isAdminPreviewPlaying ? (
+                              <Pause className="w-4 h-4 text-[#b89753]" />
+                            ) : (
+                              <Play className="w-4 h-4 text-[#b89753] ml-0.5" />
+                            )}
+                          </button>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-[#2c3e35] truncate">
+                              {customAudioTitle}
+                            </p>
+                            <p className="text-[11px] text-[#2c3e35]/60">
+                              {isAdminPreviewPlaying
+                                ? 'Reproduciendo vista previa...'
+                                : 'Pulsa Play para probar cómo sonará en la invitación'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Alternative: Direct HTTPS Audio URL */}
+                  <form
+                    onSubmit={(e) => void handleSaveCustomAudioUrl(e)}
+                    className="rounded-xl border border-[#b89753]/25 p-4 space-y-3"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#2c3e35]">
+                      <Link2 className="w-3.5 h-3.5 text-[#b89753]" />
+                      <span>Opción alternativa: usar enlace HTTPS directo (.mp3 / .m4a)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={customAudioTitle}
+                        onChange={(e) => setCustomAudioTitle(e.target.value)}
+                        placeholder="Nombre de la canción"
+                        className="sm:col-span-4 h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                      <input
+                        type="url"
+                        maxLength={500}
+                        value={customAudioUrl}
+                        onChange={(e) => setCustomAudioUrl(e.target.value)}
+                        placeholder="https://... enlace directo al archivo de audio"
+                        className="sm:col-span-5 h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                      />
+                      <button
+                        type="submit"
+                        disabled={uploadingAudio || !customAudioUrl.trim()}
+                        className="sm:col-span-3 h-10 px-4 rounded-xl bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                      >
+                        Activar Enlace
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Switch back to Built-in Romantic Synth */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <p className="text-xs text-[#2c3e35]/65">
+                      Si un navegador bloquea o no soporta un archivo externo, siempre se reproducirá la melodía romántica de respaldo.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={uploadingAudio || customAudioMode === 'synth'}
+                      onClick={() => void handleUseSynthAudio()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-[#b89753]/45 bg-[#fcfbf9] hover:bg-[#f7f5f0] disabled:opacity-50 text-[#2c3e35] text-xs font-semibold cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#b89753]" />
+                      <span>Usar melodía integrada</span>
+                    </button>
+                  </div>
+
+                  {audioMediaError && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3.5 py-2.5">
+                      {audioMediaError}
+                    </p>
+                  )}
+
+                  {audioMediaSuccess && (
+                    <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{audioMediaSuccess}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* TAB: WEDDING DATE, EVENTS, PARENTS & GODPARENTS */}
             {activeTab === 'wedding' && (
@@ -3401,7 +4783,7 @@ export const CoupleAdminSection: React.FC = () => {
               <div className="space-y-5">
                 {/* Google Drive Archive Banner */}
                 <div className="bg-white border border-[#b89753]/30 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#b89753] font-semibold">
                       <CloudUpload className="w-4 h-4 shrink-0" />
                       <span>Archivo en Carpeta de Google Drive</span>
@@ -3414,6 +4796,53 @@ export const CoupleAdminSection: React.FC = () => {
                     {driveToken && driveEmail && (
                       <p className="text-xs text-emerald-800">
                         Google conectado: {driveEmail}
+                      </p>
+                    )}
+                    {driveToken && driveFolderId && (
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        {isAutoDriveSyncRunning ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800 tabular-nums">
+                            <Clock className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>
+                              Auto cada 10 min activo · Próximo en{' '}
+                              {autoSyncCountdownLabel || '10:00'}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[11px] font-medium text-[#2c3e35]/75">
+                            <Clock className="w-3.5 h-3.5 text-[#b89753]" />
+                            <span>
+                              Auto cada 10 min:{' '}
+                              {driveAutoSyncConfirmed
+                                ? 'pausado'
+                                : 'se activa al confirmar envío'}
+                            </span>
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleToggleAutoDriveSync}
+                          disabled={isSyncingDrive}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#b89753]/40 bg-white hover:bg-[#f7f5f0] text-[11px] font-semibold text-[#2c3e35] cursor-pointer disabled:opacity-50"
+                        >
+                          {isAutoDriveSyncRunning ? (
+                            <>
+                              <Pause className="w-3 h-3 text-[#b89753]" />
+                              <span>Pausar auto</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3 text-[#b89753]" />
+                              <span>Activar cada 10 min</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    {lastAutoDriveSyncLabel && (
+                      <p className="text-[11px] text-[#2c3e35]/70 tabular-nums">
+                        {lastAutoDriveSyncLabel}
                       </p>
                     )}
                     {driveSyncProgress && (
@@ -3433,6 +4862,24 @@ export const CoupleAdminSection: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleDownloadAllPhotosZip}
+                      disabled={isZipping || allPhotos.length === 0}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#b89753] hover:bg-[#967739] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                    >
+                      {isZipping ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <FolderArchive className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {isZipping
+                          ? 'Comprimiendo...'
+                          : `Descargar Todas (.zip · ${allPhotos.length})`}
+                      </span>
+                    </button>
+
                     {!driveToken ? (
                       <GoogleSignInButton
                         onClick={() => void handleConnectDrive()}
@@ -3447,18 +4894,21 @@ export const CoupleAdminSection: React.FC = () => {
                       <>
                         <button
                           type="button"
-                          onClick={() => setConfirmDriveModalOpen(true)}
+                          onClick={() => handleOpenConfirmDriveModal(true)}
                           disabled={
                             isSyncingDrive ||
                             !driveFolderId ||
-                            pendingDrivePhotos.length === 0
+                            (pendingDrivePhotos.length === 0 &&
+                              isAutoDriveSyncRunning)
                           }
                           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
                         >
                           <CloudUpload className="w-3.5 h-3.5 text-[#b89753]" />
                           <span>
                             {pendingDrivePhotos.length === 0
-                              ? 'Todo respaldado en Drive'
+                              ? isAutoDriveSyncRunning
+                                ? 'Todo respaldado en Drive'
+                                : 'Activar respaldo cada 10 min'
                               : `Archivar ${pendingDrivePhotos.length} en Google Drive`}
                           </span>
                         </button>
@@ -3467,6 +4917,7 @@ export const CoupleAdminSection: React.FC = () => {
                           onClick={() => void refreshDriveSyncedFiles()}
                           disabled={isSyncingDrive}
                           aria-label="Actualizar estado de Google Drive"
+                          title="Comprobar fotos ya respaldadas en Drive"
                           className="p-2.5 rounded-full border border-[#b89753]/35 text-[#2c3e35] hover:bg-[#f7f5f0] cursor-pointer"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
@@ -3632,16 +5083,49 @@ export const CoupleAdminSection: React.FC = () => {
                         </h3>
                       </div>
                       <p className="text-sm text-[#2c3e35]/80 leading-relaxed">
-                        Se subirán{' '}
-                        <strong className="text-[#2c3e35]">
-                          {pendingDrivePhotos.length} fotografía(s)
-                        </strong>{' '}
-                        del álbum a tu carpeta compartida de Google Drive (
-                        <span className="font-mono text-xs">
-                          {driveFolderId}
-                        </span>
-                        ).
+                        {pendingDrivePhotos.length > 0 ? (
+                          <>
+                            Se subirán{' '}
+                            <strong className="text-[#2c3e35]">
+                              {pendingDrivePhotos.length} fotografía(s)
+                            </strong>{' '}
+                            del álbum a tu carpeta compartida de Google Drive (
+                            <span className="font-mono text-xs">
+                              {driveFolderId}
+                            </span>
+                            ).
+                          </>
+                        ) : (
+                          <>
+                            Las fotografías actuales ya están en tu carpeta de
+                            Google Drive (
+                            <span className="font-mono text-xs">
+                              {driveFolderId}
+                            </span>
+                            ).
+                          </>
+                        )}
                       </p>
+
+                      <label className="flex items-start gap-2.5 rounded-xl bg-[#f7f5f0] border border-[#b89753]/30 p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={confirmEnableAutoEvery10Min}
+                          onChange={(e) =>
+                            setConfirmEnableAutoEvery10Min(e.target.checked)
+                          }
+                          className="mt-0.5 w-4 h-4 accent-[#2c3e35] rounded cursor-pointer shrink-0"
+                        />
+                        <span className="text-xs text-[#2c3e35]/85 leading-relaxed">
+                          <strong className="block text-[#2c3e35]">
+                            Guardar en automático cada 10 minutos
+                          </strong>
+                          Mientras mantengas Google conectado en este panel, las
+                          nuevas fotografías del Foto Party se subirán
+                          automáticamente cada 10 min sin duplicados.
+                        </span>
+                      </label>
+
                       <div className="flex items-center justify-end gap-2.5 pt-2">
                         <button
                           type="button"
@@ -3671,23 +5155,37 @@ export const CoupleAdminSection: React.FC = () => {
                   onSubmit={handleSaveSettings}
                   className="bg-white border border-[#b89753]/30 rounded-2xl p-6 sm:p-8 shadow-xs space-y-5"
                 >
-                  {/* Hero Couple Photograph */}
+                  {/* Hero Couple Photograph Quick Link */}
                   <div className="bg-[#f7f5f0] border border-[#b89753]/35 rounded-xl p-4 sm:p-5 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <ImagePlus className="w-4 h-4 text-[#b89753]" />
-                      <label
-                        htmlFor="heroPhotoUrlInput"
-                        className="text-sm font-semibold text-[#2c3e35]"
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ImagePlus className="w-4 h-4 text-[#b89753]" />
+                        <label
+                          htmlFor="heroPhotoUrlInput"
+                          className="text-sm font-semibold text-[#2c3e35]"
+                        >
+                          Portada y Música Ambiental
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('media')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#b89753] hover:bg-[#967739] text-white text-xs font-semibold cursor-pointer self-start"
                       >
-                        Fotografía Principal de los Novios (Portada / Inicio)
-                      </label>
+                        <Music className="w-3.5 h-3.5" />
+                        <span>Subir Fotos y Audio</span>
+                      </button>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-center gap-4">
-                      {heroPhotoUrl && (
+                      {(heroPhotosList.find((p) => p.active)?.imageData ||
+                        heroPhotoUrl) && (
                         <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden border-2 border-[#b89753] shrink-0 shadow-xs bg-[#141d18]">
                           <img
-                            src={heroPhotoUrl}
+                            src={
+                              heroPhotosList.find((p) => p.active)?.imageData ||
+                              heroPhotoUrl
+                            }
                             alt="Vista previa novios"
                             className="w-full h-full object-cover"
                           />
@@ -3701,7 +5199,7 @@ export const CoupleAdminSection: React.FC = () => {
                           maxLength={500}
                           value={heroPhotoUrl}
                           onChange={(e) => setHeroPhotoUrl(e.target.value)}
-                          placeholder="https://... enlace de foto de los novios"
+                          placeholder="https://... enlace de foto de respaldo"
                           className="w-full h-11 bg-white border border-[#b89753]/40 rounded-xl px-4 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
                         />
                         <div className="flex flex-wrap items-center gap-2">
@@ -3720,7 +5218,7 @@ export const CoupleAdminSection: React.FC = () => {
                       </div>
                     </div>
                     <p className="text-[11px] text-[#2c3e35]/65">
-                      Esta imagen se exhibe como fotografía principal de Jessica & Jorge en el portarretrato de la invitación con diseño floral.
+                      Para subir múltiples imágenes directamente desde tu galería y elegir o subir la canción de fondo, abre la pestaña &ldquo;Portada y Música&rdquo;.
                     </p>
                   </div>
 

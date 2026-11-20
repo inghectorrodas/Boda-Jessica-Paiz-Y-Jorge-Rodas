@@ -298,6 +298,41 @@
           "maxLength": 220000,
           "pattern": "^(|data:image/(jpeg|webp);base64,[A-Za-z0-9+/=]+)$"
         },
+        "hideDefaultHeroPhotos": {
+          "type": "boolean"
+        },
+        "customAudioMode": {
+          "type": "string",
+          "enum": ["synth", "url", "uploaded"]
+        },
+        "customAudioUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^(|https://.*)$"
+        },
+        "customAudioTitle": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "customAudioMime": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "customAudioChunkCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 25
+        },
+        "customAudioUpdatedToken": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^(|[a-zA-Z0-9_\\-]+)$"
+        },
+        "customAudioDurationSec": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time"
@@ -309,6 +344,94 @@
         "fotoPartyIntervalSec",
         "albumEnabledEarly",
         "updatedAt"
+      ]
+    },
+    "HeroPhoto": {
+      "title": "HeroPhoto",
+      "description": "Fotografía del carrusel principal de la invitación administrada por los novios.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "imageData": {
+          "type": "string",
+          "maxLength": 480000
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "imageData",
+        "caption",
+        "sortOrder",
+        "active",
+        "createdAt"
+      ]
+    },
+    "WeddingAudioChunk": {
+      "title": "WeddingAudioChunk",
+      "description": "Fragmento Base64 de audio personalizado subido por los administradores para la música ambiental.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128
+        },
+        "trackToken": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 64
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "totalChunks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "mimeType": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 720000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "trackToken",
+        "index",
+        "totalChunks",
+        "mimeType",
+        "data",
+        "createdAt"
       ]
     },
     "GuestQuota": {
@@ -437,9 +560,17 @@
       "schema": { "$ref": "#/entities/WeddingPhoto" },
       "description": "Álbum colaborativo de fotografías de boda y transmisión en vivo Foto Party."
     },
+    "/wedding_hero_photos/{photoId}": {
+      "schema": { "$ref": "#/entities/HeroPhoto" },
+      "description": "Imágenes del carrusel principal de portada gestionadas por los administradores."
+    },
+    "/wedding_audio_chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/WeddingAudioChunk" },
+      "description": "Fragmentos Base64 del audio personalizado subido por los administradores."
+    },
     "/wedding_settings/{configId}": {
       "schema": { "$ref": "#/entities/WeddingConfig" },
-      "description": "Parámetros del álbum, contactos administrativos y presupuesto."
+      "description": "Parámetros del álbum, contactos administrativos, portada, música y presupuesto."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminUser" },

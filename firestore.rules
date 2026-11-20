@@ -174,7 +174,7 @@ service cloud.firestore {
           'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'updatedAt'
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'hideDefaultHeroPhotos', 'customAudioMode', 'customAudioUrl', 'customAudioTitle', 'customAudioMime', 'customAudioChunkCount', 'customAudioUpdatedToken', 'customAudioDurationSec', 'updatedAt'
         ])
         && data.googlePhotosUrl is string && data.googlePhotosUrl.size() <= 500
         && (
@@ -253,7 +253,63 @@ service cloud.firestore {
             || data.giftQrImage.matches('^data:image/webp;base64,[A-Za-z0-9+/=]+$')
           )
         ))
+        && (!('hideDefaultHeroPhotos' in data) || data.hideDefaultHeroPhotos is bool)
+        && (!('customAudioMode' in data) || (
+          data.customAudioMode is string
+          && data.customAudioMode in ['synth', 'url', 'uploaded']
+        ))
+        && (!('customAudioUrl' in data) || (
+          data.customAudioUrl is string
+          && data.customAudioUrl.size() <= 500
+          && (data.customAudioUrl == '' || data.customAudioUrl.matches('^https://.*'))
+        ))
+        && (!('customAudioTitle' in data) || (data.customAudioTitle is string && data.customAudioTitle.size() <= 120))
+        && (!('customAudioMime' in data) || (data.customAudioMime is string && data.customAudioMime.size() <= 80))
+        && (!('customAudioChunkCount' in data) || (
+          data.customAudioChunkCount is int
+          && data.customAudioChunkCount >= 0
+          && data.customAudioChunkCount <= 25
+        ))
+        && (!('customAudioUpdatedToken' in data) || (
+          data.customAudioUpdatedToken is string
+          && data.customAudioUpdatedToken.size() <= 64
+          && (data.customAudioUpdatedToken == '' || data.customAudioUpdatedToken.matches('^[a-zA-Z0-9_\\-]+$'))
+        ))
+        && (!('customAudioDurationSec' in data) || (
+          data.customAudioDurationSec is int
+          && data.customAudioDurationSec >= 0
+          && data.customAudioDurationSec <= 3600
+        ))
         && data.updatedAt is timestamp;
+    }
+
+    function isValidHeroPhoto(data, photoId) {
+      return data.keys().hasAll(['id', 'imageData', 'caption', 'sortOrder', 'active', 'createdAt'])
+        && data.keys().hasOnly(['id', 'imageData', 'caption', 'sortOrder', 'active', 'createdAt'])
+        && data.id is string && data.id == photoId && isValidId(data.id)
+        && data.imageData is string
+        && data.imageData.size() >= 10 && data.imageData.size() <= 480000
+        && (
+          data.imageData.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')
+          || data.imageData.matches('^data:image/webp;base64,[A-Za-z0-9+/=]+$')
+          || data.imageData.matches('^https://.*')
+        )
+        && data.caption is string && data.caption.size() <= 120
+        && data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 100
+        && data.active is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWeddingAudioChunk(data, chunkId) {
+      return data.keys().hasAll(['id', 'trackToken', 'index', 'totalChunks', 'mimeType', 'data', 'createdAt'])
+        && data.keys().hasOnly(['id', 'trackToken', 'index', 'totalChunks', 'mimeType', 'data', 'createdAt'])
+        && data.id is string && data.id == chunkId && isValidId(data.id)
+        && data.trackToken is string && data.trackToken.size() >= 1 && data.trackToken.size() <= 64 && data.trackToken.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.index is int && data.index >= 0 && data.index <= 24
+        && data.totalChunks is int && data.totalChunks >= 1 && data.totalChunks <= 25
+        && data.mimeType is string && data.mimeType.size() >= 5 && data.mimeType.size() <= 80 && data.mimeType.matches('^audio/[a-zA-Z0-9.+\\-]+$')
+        && data.data is string && data.data.size() >= 4 && data.data.size() <= 720000 && data.data.matches('^[A-Za-z0-9+/=]+$')
+        && data.createdAt is timestamp;
     }
 
     function isValidAdminUser(data) {
@@ -383,6 +439,35 @@ service cloud.firestore {
       allow delete: if isValidId(photoId) && isCoupleAdmin();
     }
 
+    // --- Collection: /wedding_hero_photos/{photoId} (Admin-Managed Hero Carousel) ---
+    match /wedding_hero_photos/{photoId} {
+      allow get: if isValidId(photoId) && (existing().active == true || isCoupleAdmin());
+      allow list: if existing().active == true || isVerifiedAdminEmail();
+      allow create: if isValidId(photoId)
+        && isCoupleAdmin()
+        && isValidHeroPhoto(incoming(), photoId)
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(photoId)
+        && isCoupleAdmin()
+        && isValidHeroPhoto(incoming(), photoId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['imageData', 'caption', 'sortOrder', 'active']);
+      allow delete: if isValidId(photoId) && isCoupleAdmin();
+    }
+
+    // --- Collection: /wedding_audio_chunks/{chunkId} (Admin-Uploaded Music Chunks) ---
+    match /wedding_audio_chunks/{chunkId} {
+      allow get: if isValidId(chunkId);
+      allow list: if existing().totalChunks >= 1;
+      allow create: if isValidId(chunkId)
+        && isCoupleAdmin()
+        && isValidWeddingAudioChunk(incoming(), chunkId)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(chunkId) && isCoupleAdmin();
+    }
+
     // --- Collection: /wedding_settings/{configId} ---
     match /wedding_settings/{configId} {
       allow get: if isValidId(configId);
@@ -396,7 +481,7 @@ service cloud.firestore {
         && isValidWeddingConfig(incoming())
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'updatedAt'
+          'googlePhotosUrl', 'welcomeNote', 'fotoPartyIntervalSec', 'albumEnabledEarly', 'appsScriptUrl', 'totalTables', 'heroPhotoUrl', 'tablesVisibleToGuests', 'adminPhone', 'groomPhone', 'budgetAdultPlates', 'budgetKidPlates', 'weddingDateISO', 'ceremonyTime', 'ceremonyVenue', 'ceremonyAddress', 'ceremonyMapUrl', 'receptionTime', 'receptionVenue', 'receptionAddress', 'receptionMapUrl', 'brideParents', 'groomParents', 'godparentsList', 'giftEnvelopeNote', 'giftBankName', 'giftAccountHolder', 'giftAccountType', 'giftAccountNumber', 'giftQrValue', 'giftQrImage', 'hideDefaultHeroPhotos', 'customAudioMode', 'customAudioUrl', 'customAudioTitle', 'customAudioMime', 'customAudioChunkCount', 'customAudioUpdatedToken', 'customAudioDurationSec', 'updatedAt'
         ]);
       allow delete: if false;
     }

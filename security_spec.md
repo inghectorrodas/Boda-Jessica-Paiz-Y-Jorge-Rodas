@@ -5,7 +5,8 @@
 2. **Public Seating Plan (`seating_entries`)**: Contains only non-PII display names, surname tokens, seat counts, and table numbers. Anyone can create a seating entry alongside an RSVP with strict key/type/size validation, while only verified couple admins can modify or remove entries.
 3. **Collaborative Wedding Album (`wedding_photos`)**: Guests can upload compressed JPEG/WebP images (`<= 480000` chars) with `visible == true`. Public queries only list documents where `visible == true`; hidden photos (`visible == false`) are readable/listable only by verified couple admins.
 4. **Admin Settings & Roles (`wedding_settings`, `admins`)**: Only verified couple admins can write `/wedding_settings/{configId}` or manage `/admins/{uid}`.
-5. **Strict Timestamps & Path IDs**: All document IDs match `^[a-zA-Z0-9_\-]+$` (`<= 128` chars), and all `createdAt` / `updatedAt` timestamps must equal `request.time`.
+5. **Hero Carousel & Ambient Audio (`wedding_hero_photos`, `wedding_audio_chunks`)**: Public guests may only read active hero photos (`active == true`) and audio chunks (`totalChunks <= 24`); only verified couple admins can upload, reorder, hide, or delete hero photos and audio tracks.
+6. **Strict Timestamps & Path IDs**: All document IDs match `^[a-zA-Z0-9_\-]+$` (`<= 128` chars), and all `createdAt` / `updatedAt` timestamps must equal `request.time`.
 
 ## 2. The "Dirty Dozen" Attack Payloads (All Must Return `PERMISSION_DENIED`)
 1. **Shadow Field Injection on RSVP Create**: Payload with all valid RSVP keys plus `"isAdmin": true`.
