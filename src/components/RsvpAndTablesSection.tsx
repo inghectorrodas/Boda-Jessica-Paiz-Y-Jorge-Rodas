@@ -1260,8 +1260,12 @@ export const RsvpAndTablesSection: React.FC = () => {
                   <Heart className="w-3.5 h-3.5" />
                   <span>Mesa Principal de los Novios</span>
                 </div>
-                <p className="mt-1.5 font-serif text-2xl font-medium">
-                  Jessica Guadalupe &amp; Jorge Luis
+                <p className="mt-1.5 font-['Great_Vibes'] text-3xl sm:text-4xl font-normal text-[#f7f5f0]">
+                  Jessica Guadalupe{' '}
+                  <span className="font-serif italic text-[#b89753] text-2xl sm:text-3xl">
+                    &amp;
+                  </span>{' '}
+                  Jorge Luis
                 </p>
               </div>
             </div>

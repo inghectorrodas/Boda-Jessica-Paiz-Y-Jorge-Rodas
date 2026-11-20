@@ -1204,8 +1204,12 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                   ? 'QR Directo a Compartir Foto'
                   : 'Tarjeta para Centros de Mesa'}
               </p>
-              <h3 className="mt-1 font-serif text-3xl font-semibold text-[#2c3e35]">
-                Jessica Paiz &amp; Jorge Rodas
+              <h3 className="mt-1 font-['Great_Vibes'] text-3xl sm:text-4xl font-normal text-[#b89753]">
+                Jessica Paiz{' '}
+                <span className="font-serif italic text-[#7e919e] text-2xl sm:text-3xl">
+                  &amp;
+                </span>{' '}
+                Jorge Rodas
               </h3>
               <p className="mt-2 text-sm text-[#2c3e35]/75">
                 {qrModalMode === 'upload'

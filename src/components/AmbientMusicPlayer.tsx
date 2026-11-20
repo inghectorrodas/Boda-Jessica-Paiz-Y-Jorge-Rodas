@@ -108,6 +108,21 @@ export const AmbientMusicPlayer: React.FC = () => {
   };
 
   useEffect(() => {
+    const handleStartFromEnvelope = () => {
+      if (!isPlaying) {
+        void startSynth().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('wedding:start-ambient-music', handleStartFromEnvelope);
+    return () => {
+      window.removeEventListener('wedding:start-ambient-music', handleStartFromEnvelope);
+    };
+  }, [isPlaying]);
+
+  useEffect(() => {
     return () => {
       if (intervalRef.current !== null) {
         window.clearInterval(intervalRef.current);

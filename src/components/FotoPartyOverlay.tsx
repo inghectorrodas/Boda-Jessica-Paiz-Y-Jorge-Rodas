@@ -83,8 +83,12 @@ export const FotoPartyOverlay: React.FC<FotoPartyOverlayProps> = ({
           <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.26em] text-[#b89753] font-semibold truncate">
             Foto Party en Vivo · 18 Diciembre 2026
           </p>
-          <h2 className="font-serif text-xl sm:text-3xl font-medium text-[#fcfbf9] truncate">
-            Jessica Paiz &amp; Jorge Rodas
+          <h2 className="font-['Great_Vibes'] text-2xl sm:text-4xl font-normal text-[#b89753] truncate">
+            Jessica Paiz{' '}
+            <span className="font-serif italic text-[#9aa8b4] text-xl sm:text-3xl">
+              &amp;
+            </span>{' '}
+            Jorge Rodas
           </h2>
         </div>
 

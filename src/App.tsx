@@ -21,6 +21,7 @@ import { CoupleAdminSection } from './components/CoupleAdminSection';
 import { GiftRegistryModal } from './components/GiftRegistryModal';
 import { PhotoAlbumSection } from './components/PhotoAlbumSection';
 import { RsvpAndTablesSection } from './components/RsvpAndTablesSection';
+import { WeddingEnvelopeIntro } from './components/WeddingEnvelopeIntro';
 import {
   buildCombinedGoogleCalendarUrl,
   buildCountdownTargetISO,
@@ -48,6 +49,12 @@ export default function App() {
   );
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [hasOpenedEnvelope, setHasOpenedEnvelope] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.hash === '#compartir-foto';
+    }
+    return false;
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -113,9 +120,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 lg:gap-8">
           <a
             href="#inicio"
-            className="font-serif text-lg sm:text-2xl font-semibold tracking-tight text-[#2c3e35] whitespace-nowrap shrink-0"
+            className="font-['Great_Vibes'] text-2xl sm:text-3xl font-normal tracking-wide text-[#b89753] whitespace-nowrap shrink-0"
           >
-            {COUPLE_INFO.shortTitle}
+            Jessica{' '}
+            <span className="font-serif italic text-[#7e919e] text-xl sm:text-2xl">
+              &amp;
+            </span>{' '}
+            Jorge
           </a>
 
           <nav
@@ -221,16 +232,16 @@ export default function App() {
           <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:py-20 grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-10 lg:gap-14 items-stretch">
             {/* Left Typographic Hierarchy */}
             <div className="lg:col-span-6 flex flex-col justify-center text-center lg:text-left">
-              <p className="font-['Great_Vibes'] text-[27px] ml-0 text-center tracking-[0.12em] text-[#b89753] font-semibold mb-2 sm:mb-3">
+              <p className="text-xs sm:text-sm text-center uppercase tracking-[0.26em] text-[#2c3e35]/70 font-semibold mb-2 sm:mb-3">
                 Boda
               </p>
 
-              <h1 className="font-serif text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-[#2c3e35] leading-[1.08]">
-                <span className="block font-medium text-center">Jessica Paiz</span>
-                <span className="block font-['Great_Vibes'] font-light italic text-3xl sm:text-5xl lg:text-6xl text-[#b89753] my-1 sm:my-2 text-center">
-                  Y
+              <h1 className="font-['Great_Vibes'] text-5xl sm:text-6xl lg:text-7xl font-normal text-[#b89753] leading-[1.12] text-center">
+                <span className="block text-center">Jessica Paiz</span>
+                <span className="block font-serif italic text-3xl sm:text-5xl text-[#7e919e] my-0.5 sm:my-1 text-center font-normal">
+                  &amp;
                 </span>
-                <span className="block font-medium text-center">Jorge Rodas</span>
+                <span className="block text-center">Jorge Rodas</span>
               </h1>
 
               <p className="mt-4 sm:mt-5 text-xs sm:text-sm text-center uppercase tracking-[0.28em] text-[#b89753] font-semibold">
@@ -555,8 +566,12 @@ export default function App() {
       <footer className="relative overflow-hidden py-14 px-6 text-center bg-white border-t border-[#b89753]/25">
         <div className="relative z-10">
           <BotanicalDivider className="mb-6" />
-          <p className="font-serif text-3xl font-medium text-[#2c3e35]">
-            Jessica Paiz &amp; Jorge Rodas
+          <p className="font-['Great_Vibes'] text-4xl sm:text-5xl font-normal text-[#b89753]">
+            Jessica Paiz{' '}
+            <span className="font-serif italic text-3xl sm:text-4xl text-[#7e919e]">
+              &amp;
+            </span>{' '}
+            Jorge Rodas
           </p>
           <p className="mt-2 text-xs uppercase tracking-[0.25em] text-[#b89753] font-semibold">
             {weddingDateDots}
@@ -577,6 +592,14 @@ export default function App() {
         onClose={() => setIsGiftModalOpen(false)}
         config={weddingConfig}
       />
+
+      {/* INTERACTIVE ENVELOPE PRELOAD SCREEN */}
+      {!hasOpenedEnvelope && (
+        <WeddingEnvelopeIntro
+          config={weddingConfig}
+          onOpen={() => setHasOpenedEnvelope(true)}
+        />
+      )}
     </div>
   );
 }
