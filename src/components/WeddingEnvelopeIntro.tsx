@@ -73,7 +73,8 @@ export const WeddingEnvelopeIntro: React.FC<WeddingEnvelopeIntroProps> = ({
 
       {/* Invitation Preload Card */}
       <div
-        className={`relative z-10 w-full max-w-[430px] max-h-[94dvh] overflow-y-auto rounded-2xl bg-[#fcfbf9] border border-[#b89753]/30 shadow-2xl text-center transition-all duration-500 ${
+        onClick={handleOpenEnvelope}
+        className={`relative z-10 w-full max-w-[430px] max-h-[94dvh] overflow-y-auto rounded-2xl bg-[#fcfbf9] border border-[#b89753]/30 shadow-2xl text-center transition-all duration-500 cursor-pointer ${
           isOpening ? 'scale-105 opacity-0' : 'scale-100 opacity-100'
         }`}
       >
@@ -165,6 +166,9 @@ export const WeddingEnvelopeIntro: React.FC<WeddingEnvelopeIntroProps> = ({
                       <stop offset="65%" stopColor="#b48f48" />
                       <stop offset="100%" stopColor="#8c6b2d" />
                     </radialGradient>
+                    <clipPath id="waxSealRingsClip">
+                      <circle cx="160" cy="112" r="18.5" />
+                    </clipPath>
                   </defs>
 
                   <rect width="320" height="210" fill="url(#envBody)" />
@@ -234,29 +238,20 @@ export const WeddingEnvelopeIntro: React.FC<WeddingEnvelopeIntroProps> = ({
                       strokeOpacity="0.45"
                       strokeWidth="1"
                     />
-                    {/* Botanical Olive Sprig in Wax Seal */}
-                    <path
-                      d="M160 124 C160 113, 160 105, 160 99"
-                      stroke="#5b4316"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M160 118 C155 117, 152 114, 152 111 C156 111, 159 114, 160 118 Z"
-                      fill="#5b4316"
-                    />
-                    <path
-                      d="M160 113 C165 112, 168 109, 168 106 C164 106, 161 109, 160 113 Z"
-                      fill="#5b4316"
-                    />
-                    <path
-                      d="M160 108 C155 107, 153 104, 153 101 C156 101, 159 104, 160 108 Z"
-                      fill="#5b4316"
-                    />
-                    <path
-                      d="M160 104 C164 103, 167 101, 167 98 C164 98, 161 101, 160 104 Z"
-                      fill="#5b4316"
-                    />
+                    {/* Anillos de Boda Dorados en el Sello */}
+                    <g clipPath="url(#waxSealRingsClip)">
+                      <image
+                        href="/assets/aistudio/ANILLOS_05201339.png"
+                        x="141"
+                        y="94"
+                        width="38"
+                        height="38"
+                        preserveAspectRatio="xMidYMid meet"
+                        style={{
+                          filter: 'drop-shadow(0px 1px 2px rgba(45,28,8,0.45))',
+                        }}
+                      />
+                    </g>
                   </g>
                 </svg>
               </div>

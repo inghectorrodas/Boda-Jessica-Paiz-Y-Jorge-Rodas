@@ -25,11 +25,16 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   config,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const audioMode = config.customAudioMode ?? 'synth';
-  const audioUrl = config.customAudioUrl?.trim() ?? '';
+
+  // Automatically prioritize uploaded song if a track token is present
   const audioToken = config.customAudioUpdatedToken?.trim() ?? '';
+  const audioMode = audioToken && config.customAudioMode !== 'url'
+    ? 'uploaded'
+    : (config.customAudioMode ?? 'synth');
+
+  const audioUrl = config.customAudioUrl?.trim() ?? '';
   const audioMime = config.customAudioMime?.trim() || 'audio/mpeg';
-  const audioTitle = config.customAudioTitle?.trim() || 'Música ambiental';
+  const audioTitle = config.customAudioTitle?.trim() || 'Música de la boda';
 
   const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string>(() => {
     if (audioMode === 'uploaded' && audioToken && AUDIO_BLOB_CACHE.has(audioToken)) {
@@ -313,6 +318,7 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioMode, resolvedCustomSrc]);
 
+  // Listener for opening envelope
   useEffect(() => {
     const handleStartFromEnvelope = () => {
       if (!isPlayingRef.current) {
@@ -326,6 +332,43 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedCustomSrc, audioMode]);
+
+  // Automatic playback without guest intervention:
+  // 1) Try autoplay immediately on mount.
+  // 2) On the first touch/click anywhere on the page, automatically start playing the song!
+  useEffect(() => {
+    const tryAutoplay = () => {
+      if (!isPlayingRef.current) {
+        void startPlayback().catch(() => {});
+      }
+    };
+
+    tryAutoplay();
+
+    const handleFirstUserInteraction = () => {
+      if (!isPlayingRef.current) {
+        void startPlayback().catch(() => {});
+      }
+      cleanupInteractionListeners();
+    };
+
+    const cleanupInteractionListeners = () => {
+      window.removeEventListener('pointerdown', handleFirstUserInteraction);
+      window.removeEventListener('touchstart', handleFirstUserInteraction);
+      window.removeEventListener('click', handleFirstUserInteraction);
+      window.removeEventListener('keydown', handleFirstUserInteraction);
+    };
+
+    window.addEventListener('pointerdown', handleFirstUserInteraction, { once: true, passive: true });
+    window.addEventListener('touchstart', handleFirstUserInteraction, { once: true, passive: true });
+    window.addEventListener('click', handleFirstUserInteraction, { once: true, passive: true });
+    window.addEventListener('keydown', handleFirstUserInteraction, { once: true, passive: true });
+
+    return () => {
+      cleanupInteractionListeners();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedCustomSrc]);
 
   useEffect(() => {
     return () => {
@@ -356,8 +399,8 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         title={audioTitle}
         aria-label={
           isPlaying
-            ? `Pausar música ambiental (${audioTitle})`
-            : `Reproducir música ambiental (${audioTitle})`
+            ? `Pausar música (${audioTitle})`
+            : `Reproducir música (${audioTitle})`
         }
         className={`group flex items-center gap-2.5 h-11 rounded-full border px-4 shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89753] ${
           isPlaying
@@ -381,7 +424,7 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
           <>
             <Music className="w-4 h-4 text-[#b89753] shrink-0" />
             <span className="text-xs font-medium tracking-wide whitespace-nowrap hidden sm:inline">
-              Música ambiental
+              Música
             </span>
             <VolumeX className="w-3.5 h-3.5 text-[#2c3e35]/45 sm:hidden" />
           </>

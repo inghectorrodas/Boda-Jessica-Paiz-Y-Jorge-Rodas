@@ -578,12 +578,32 @@ export function mergeWeddingConfig(
     giftQrImage:
       typeof raw.giftQrImage === 'string' ? raw.giftQrImage.trim() : '',
     hideDefaultHeroPhotos: Boolean(raw.hideDefaultHeroPhotos ?? false),
-    customAudioMode:
-      raw.customAudioMode === 'uploaded' ||
-      raw.customAudioMode === 'url' ||
-      raw.customAudioMode === 'synth'
-        ? raw.customAudioMode
-        : 'synth',
+    customAudioMode: (() => {
+      if (
+        raw.customAudioUpdatedToken &&
+        typeof raw.customAudioUpdatedToken === 'string' &&
+        raw.customAudioUpdatedToken.trim() !== ''
+      ) {
+        if (raw.customAudioMode !== 'url') {
+          return 'uploaded';
+        }
+      }
+      if (
+        raw.customAudioMode === 'uploaded' ||
+        raw.customAudioMode === 'url' ||
+        raw.customAudioMode === 'synth'
+      ) {
+        return raw.customAudioMode;
+      }
+      if (
+        raw.customAudioUrl &&
+        typeof raw.customAudioUrl === 'string' &&
+        raw.customAudioUrl.startsWith('https://')
+      ) {
+        return 'url';
+      }
+      return 'synth';
+    })(),
     customAudioUrl:
       typeof raw.customAudioUrl === 'string'
         ? raw.customAudioUrl.trim().slice(0, 500)
