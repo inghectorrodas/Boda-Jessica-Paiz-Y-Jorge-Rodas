@@ -1109,7 +1109,7 @@ export const RsvpAndTablesSection: React.FC = () => {
               <div>
                 <label
                   htmlFor="lookupPhoneInput"
-                  className="block text-sm font-medium text-[#2c3e35] mb-2"
+                  className="block text-sm font-medium text-[#2c3e35] mb-2 text-center"
                 >
                   Número de Teléfono / WhatsApp
                 </label>
@@ -1127,7 +1127,7 @@ export const RsvpAndTablesSection: React.FC = () => {
                     className="w-full h-12 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl pl-11 pr-4 text-sm text-[#2c3e35] placeholder:text-[#2c3e35]/40 focus:outline-none focus:border-[#b89753] focus:ring-1 focus:ring-[#b89753]"
                   />
                 </div>
-                <p className="mt-2 text-xs text-[#2c3e35]/60">
+                <p className="mt-2 text-xs text-[#2c3e35]/60 text-center">
                   Verificaremos tu teléfono en la lista de invitados para
                   mostrarte tus sillas y platos asignados.
                 </p>
@@ -1155,7 +1155,7 @@ export const RsvpAndTablesSection: React.FC = () => {
                 <span>
                   {lookupStatus === 'searching'
                     ? 'Buscando tu invitación...'
-                    : 'Buscar mi Invitación'}
+                    : 'CONFIRMAR AQUÍ'}
                 </span>
               </button>
             </form>
