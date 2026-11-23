@@ -1136,7 +1136,7 @@ export const RsvpAndTablesSection: React.FC = () => {
               {lookupError && (
                 <p
                   role="alert"
-                  className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5"
+                  className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 text-center"
                 >
                   {lookupError}
                 </p>
