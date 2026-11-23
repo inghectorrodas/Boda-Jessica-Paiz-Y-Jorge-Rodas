@@ -9,8 +9,13 @@ export const GOOGLE_DRIVE_SCOPES = [
   'https://www.googleapis.com/auth/drive',
 ] as const;
 
+export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
+export const FIREBASE_DATABASE_ID = firebaseConfig.firestoreDatabaseId;
+
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export const adminGoogleProvider = new GoogleAuthProvider();
+adminGoogleProvider.setCustomParameters({ prompt: 'select_account' });
 export const googleProvider = new GoogleAuthProvider();
 GOOGLE_DRIVE_SCOPES.forEach((scope) => googleProvider.addScope(scope));
 googleProvider.setCustomParameters({ prompt: 'select_account' });

@@ -237,7 +237,7 @@
         "ceremonyMapUrl": {
           "type": "string",
           "maxLength": 500,
-          "pattern": "^(|https://.*)$"
+          "pattern": "^(|https?://.*)$"
         },
         "receptionTime": {
           "type": "string",
@@ -255,7 +255,7 @@
         "receptionMapUrl": {
           "type": "string",
           "maxLength": 500,
-          "pattern": "^(|https://.*)$"
+          "pattern": "^(|https?://.*)$"
         },
         "brideParents": {
           "type": "string",
@@ -296,7 +296,7 @@
         "giftQrImage": {
           "type": "string",
           "maxLength": 220000,
-          "pattern": "^(|data:image/(jpeg|webp);base64,[A-Za-z0-9+/=]+)$"
+          "pattern": "^(|data:image/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+)$"
         },
         "hideDefaultHeroPhotos": {
           "type": "boolean"
@@ -308,7 +308,7 @@
         "customAudioUrl": {
           "type": "string",
           "maxLength": 500,
-          "pattern": "^(|https://.*)$"
+          "pattern": "^(|https?://.*)$"
         },
         "customAudioTitle": {
           "type": "string",

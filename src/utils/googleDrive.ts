@@ -201,3 +201,63 @@ export async function uploadBlobToGoogleDriveFolder({
 
   return (await res.json()) as DriveFileSummary;
 }
+
+export async function uploadPhotoViaAppsScript({
+  appsScriptUrl,
+  photoId,
+  fileName,
+  imageData,
+  description = '',
+}: {
+  appsScriptUrl: string;
+  photoId: string;
+  fileName: string;
+  imageData: string;
+  description?: string;
+}): Promise<DriveFileSummary> {
+  const [header, base64Data] = imageData.split(',');
+  const mimeMatch = header?.match(/data:([^;]+)/);
+  const mimeType = mimeMatch?.[1] || 'image/jpeg';
+
+  if (!base64Data) {
+    throw new Error('Imagen inválida para enviar a Google Apps Script.');
+  }
+
+  const res = await fetch(appsScriptUrl.trim(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+    },
+    body: JSON.stringify({
+      action: 'uploadPhoto',
+      photoId,
+      fileName,
+      mimeType,
+      base64Data,
+      description,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Apps Script respondió con estado ${res.status}.`);
+  }
+
+  const payload = (await res.json()) as {
+    ok?: boolean;
+    error?: string;
+    id?: string;
+    name?: string;
+  };
+
+  if (payload?.ok === false) {
+    throw new Error(
+      payload.error || 'Apps Script no pudo guardar la fotografía en Drive.'
+    );
+  }
+
+  return {
+    id: String(payload.id || photoId),
+    name: String(payload.name || fileName),
+  };
+}
+

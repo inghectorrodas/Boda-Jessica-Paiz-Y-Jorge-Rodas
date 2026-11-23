@@ -174,7 +174,7 @@ export interface WeddingConfigRecord {
   customAudioDurationSec?: number;
 }
 
-export const WEDDING_ALBUM_UNLOCK_ISO = '2026-12-18T00:00:00';
+export const WEDDING_ALBUM_UNLOCK_ISO = '2027-07-10T00:00:00';
 
 export function isWeddingDayReached(weddingDateISO?: string): boolean {
   const safeDate =
@@ -190,6 +190,7 @@ export const DEFAULT_GODPARENTS_LIST: GodparentRole[] = [
   { roleName: 'Padrinos de Lazo', names: 'Ing. Alejandro Rodas & Lic. Marcela de Rodas' },
   { roleName: 'Padrinos de Ramo, Biblia y Rosario', names: 'Sr. Mario Guardado & Sra. Claudia de Guardado' },
   { roleName: 'Padrinos de Apoyo / Recepción', names: 'Familia Mendoza Herrera' },
+  { roleName: 'Padrinos de Tarjeta', names: 'Elia Cristina & Ing. Héctor Rodas' },
 ];
 
 export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
@@ -197,7 +198,7 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
     'https://drive.google.com/drive/folders/13Ii_V2aNXTZUbuvefWLIbS_L6jP0mMfR?usp=sharing',
   appsScriptUrl: '',
   welcomeNote:
-    'Comparte tus fotografías favoritas de la ceremonia y la fiesta. También puedes enviar tus fotos al instante para proyectarlas en nuestro Foto Party en vivo.',
+    '¡Ayúdanos a no perdernos ningún instante de nuestra boda! Comparte tus fotografías y captura esos momentos espontáneos, divertidos y especiales que quizás nosotros no alcancemos a ver.',
   fotoPartyIntervalSec: 6,
   albumEnabledEarly: false,
   totalTables: 10,
@@ -208,7 +209,7 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   groomPhone: '+503 78249210',
   budgetAdultPlates: 0,
   budgetKidPlates: 0,
-  weddingDateISO: '2026-12-18',
+  weddingDateISO: '2027-07-10',
   ceremonyTime: '16:00',
   ceremonyVenue: 'Parroquia Principal',
   ceremonyAddress: 'Centro Histórico, San Salvador, El Salvador',
@@ -280,8 +281,8 @@ export const COUPLE_INFO = {
   bride: 'Jessica Paiz',
   groom: 'Jorge Rodas',
   shortTitle: 'Jessica & Jorge',
-  dateISO: '2026-12-18T16:00:00',
-  dateDisplay: 'Viernes 18 de Diciembre, 2026',
+  dateISO: '2027-07-10T16:00:00',
+  dateDisplay: 'Sábado 10 de Julio, 2027',
   dressCode: 'Business Casual · Casual Elegante',
   giftRegistry: 'Lluvia de Sobres o Mesa de Regalos en Tiendas Departamentales',
   quote:
@@ -290,39 +291,33 @@ export const COUPLE_INFO = {
     bride: 'Sra. Guadalupe Mendoza & Sr. Guadalupe Herrera',
     groom: 'Sr. Jorge Rodas Morales & Sra. Carmen Benítez de Rodas',
   },
-  godparentsList: [
-    { roleName: 'Padrinos de Anillos', names: 'Sr. Roberto Mendoza & Sra. Elena Benítez' },
-    { roleName: 'Padrinos de Arras', names: 'Lic. Carlos Morales & Dra. Sofia Benítez' },
-    { roleName: 'Padrinos de Lazo', names: 'Ing. Alejandro Rodas & Lic. Marcela de Rodas' },
-    { roleName: 'Padrinos de Ramo, Biblia y Rosario', names: 'Sr. Mario Guardado & Sra. Claudia de Guardado' },
-    { roleName: 'Padrinos de Apoyo / Recepción', names: 'Familia Mendoza Herrera' },
-  ] as GodparentRole[],
+  godparentsList: DEFAULT_GODPARENTS_LIST,
 };
 
 export const WEDDING_EVENTS: WeddingEvent[] = [
   {
     id: 'ceremony',
     title: 'Ceremonia Religiosa',
-    dateLabel: 'Viernes 18 de Diciembre, 2026',
+    dateLabel: 'Sábado 10 de Julio, 2027',
     timeLabel: '4:00 PM',
     venue: 'Parroquia Principal',
     address: 'Centro Histórico, San Salvador, El Salvador',
     mapUrl: 'https://maps.google.com/?q=Catedral+Metropolitana+San+Salvador',
-    icsStart: '20261218T220000Z',
-    icsEnd: '20261219T000000Z',
+    icsStart: '20270710T220000Z',
+    icsEnd: '20270711T000000Z',
     icsDescription:
       'Ceremonia religiosa de matrimonio de Jessica Paiz y Jorge Rodas (4:00 PM · Parroquia Principal).',
   },
   {
     id: 'reception',
     title: 'Recepción',
-    dateLabel: 'Viernes 18 de Diciembre, 2026',
+    dateLabel: 'Sábado 10 de Julio, 2027',
     timeLabel: '7:00 PM',
     venue: 'Salón de Eventos Elegance',
     address: 'Zona Escalón, San Salvador, El Salvador',
     mapUrl: 'https://maps.google.com/?q=Colonia+Escalon+San+Salvador',
-    icsStart: '20261219T010000Z',
-    icsEnd: '20261219T080000Z',
+    icsStart: '20270711T010000Z',
+    icsEnd: '20270711T080000Z',
     icsDescription:
       'Recepción y cena de celebración por la boda de Jessica Paiz y Jorge Rodas (7:00 PM · Salón de Eventos Elegance).',
   },
@@ -459,7 +454,7 @@ export function toElSalvadorUtcIso(
 
 export function sanitizeGodparentsList(raw: unknown): GodparentRole[] {
   if (!Array.isArray(raw)) return DEFAULT_GODPARENTS_LIST;
-  const parsed = raw
+  return raw
     .filter(
       (item): item is Record<string, unknown> =>
         typeof item === 'object' && item !== null
@@ -470,7 +465,6 @@ export function sanitizeGodparentsList(raw: unknown): GodparentRole[] {
     }))
     .filter((item) => item.roleName.length > 0 && item.names.length > 0)
     .slice(0, 12);
-  return parsed.length > 0 ? parsed : DEFAULT_GODPARENTS_LIST;
 }
 
 export function mergeWeddingConfig(

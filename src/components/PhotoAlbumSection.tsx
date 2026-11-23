@@ -49,7 +49,9 @@ import {
 import {
   dataUrlToBlob,
   extractDriveFolderId,
+  getDriveAccessToken,
   uploadBlobToGoogleDriveFolder,
+  uploadPhotoViaAppsScript,
 } from '../utils/googleDrive';
 import {
   DEFAULT_DRIVE_FOLDER_ID,
@@ -549,12 +551,11 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
       }
 
       if (uploadedItems.length > 0) {
-        const token =
-          typeof window !== 'undefined'
-            ? window.localStorage.getItem('boda_drive_access_token')
-            : null;
+        const token = getDriveAccessToken();
         const folderId = extractDriveFolderId(config.googlePhotosUrl);
-        if (token && folderId) {
+        const appsScriptUrl = config.appsScriptUrl?.trim();
+
+        if ((token && folderId) || (appsScriptUrl && isValidAppsScriptUrl(appsScriptUrl))) {
           const itemsForDrive = [...uploadedItems];
           window.setTimeout(async () => {
             const safeGuest =
@@ -562,22 +563,34 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
               'invitado';
             for (const driveItem of itemsForDrive) {
               try {
-                const blob = dataUrlToBlob(driveItem.imageData);
                 const fileName = `${driveItem.photoId}_${safeGuest}.jpg`;
-                await uploadBlobToGoogleDriveFolder({
-                  folderId,
-                  accessToken: token,
-                  fileName,
-                  blob,
-                  description: trimmedCaption
-                    ? `Compartida por ${trimmedName}: ${trimmedCaption}`
-                    : `Compartida por ${trimmedName}`,
-                });
+                if (token && folderId) {
+                  const blob = dataUrlToBlob(driveItem.imageData);
+                  await uploadBlobToGoogleDriveFolder({
+                    folderId,
+                    accessToken: token,
+                    fileName,
+                    blob,
+                    description: trimmedCaption
+                      ? `Compartida por ${trimmedName}: ${trimmedCaption}`
+                      : `Compartida por ${trimmedName}`,
+                  });
+                } else if (appsScriptUrl && isValidAppsScriptUrl(appsScriptUrl)) {
+                  await uploadPhotoViaAppsScript({
+                    appsScriptUrl,
+                    photoId: driveItem.photoId,
+                    fileName,
+                    imageData: driveItem.imageData,
+                    description: trimmedCaption
+                      ? `Compartida por ${trimmedName}: ${trimmedCaption}`
+                      : `Compartida por ${trimmedName}`,
+                  });
+                }
               } catch (err) {
-                console.error('Error auto-syncing photo to Google Drive:', err);
+                console.warn('Auto-sync photo to Google Drive background task:', err);
               }
             }
-          }, 5000);
+          }, 3000);
         }
       }
 
@@ -628,26 +641,72 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     return (
       <section
         id="album"
-        className="relative overflow-hidden py-16 px-6 bg-[#f7f5f0]/75 border-t border-[#b89753]/20"
+        className="relative overflow-hidden py-16 sm:py-20 px-4 sm:px-6 bg-[#f7f5f0]/75 border-t border-[#b89753]/20"
       >
-        <div className="relative z-10 max-w-3xl mx-auto bg-white border border-[#b89753]/30 rounded-2xl p-8 sm:p-10 text-center shadow-xs">
-          <div className="w-12 h-12 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center mx-auto mb-4">
-            <CalendarClock className="w-5 h-5" />
+        <div className="relative z-10 max-w-3xl mx-auto bg-white border border-[#b89753]/35 rounded-3xl p-8 sm:p-12 text-center shadow-sm">
+          <div className="w-14 h-14 rounded-full bg-[#f7f5f0] border border-[#b89753]/35 text-[#b89753] flex items-center justify-center mx-auto mb-5 shadow-xs">
+            <Camera className="w-6 h-6" />
           </div>
-          <p className="text-xs uppercase tracking-[0.22em] text-[#b89753] font-semibold">
-            Álbum Colaborativo · Foto Party
-          </p>
-          <h2 className="mt-2 font-serif text-3xl sm:text-4xl font-semibold text-[#2c3e35]">
-            Disponible el Día de la Boda
+
+          <div className="space-y-1 mb-3">
+            <p className="text-xs uppercase tracking-[0.26em] text-[#b89753] font-semibold text-center">
+              ÁLBUM COLABORATIVO
+            </p>
+            <p className="text-sm uppercase tracking-[0.22em] text-[#2c3e35]/75 font-bold text-center">
+              FOTO PARTY
+            </p>
+          </div>
+
+          <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#2c3e35] leading-tight text-center">
+            ¡Sé nuestro PAPARAZZI!
           </h2>
-          <p className="mt-3 text-sm text-[#2c3e35]/75 max-w-lg mx-auto leading-relaxed">
-            Toda la sección de fotografías de la boda y el Foto Party en vivo
-            se habilitará automáticamente el{' '}
-            <strong className="font-semibold text-[#2c3e35]">
-              {formatWeddingReportDateLabel(config.weddingDateISO)}
-            </strong>{' '}
-            para que compartas tus recuerdos durante la celebración.
+          <p className="font-['Great_Vibes'] text-3xl sm:text-4xl text-[#b89753] font-normal mt-1 mb-5 text-center">
+            Captura cada momento
           </p>
+
+          <div className="max-w-xl mx-auto space-y-2 text-[#2c3e35]/80 text-center">
+            <p className="text-base sm:text-lg font-medium text-[#2c3e35]">
+              ¡Ayúdanos a no perdernos ningún instante de nuestra boda!
+            </p>
+            <p className="text-sm sm:text-base leading-relaxed text-[#2c3e35]/75">
+              Comparte tus fotografías y captura esos momentos espontáneos, divertidos y especiales que quizás nosotros no alcancemos a ver.
+            </p>
+          </div>
+
+          {/* Availability Box */}
+          <div className="mt-8 pt-7 border-t border-[#b89753]/25 max-w-lg mx-auto text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#2c3e35]/5 border border-[#2c3e35]/15 text-[#2c3e35] text-[11px] sm:text-xs uppercase tracking-[0.22em] font-semibold mb-3">
+              <CalendarClock className="w-3.5 h-3.5 text-[#b89753]" />
+              <span>DISPONIBLE EL DÍA DE LA BODA</span>
+            </div>
+            <p className="font-serif text-2xl sm:text-3xl font-bold text-[#b89753] tracking-wide mb-2.5">
+              10 de julio de 2027
+            </p>
+            <p className="text-xs sm:text-sm text-[#2c3e35]/75 leading-relaxed max-w-md mx-auto">
+              El álbum y el Foto Party se habilitarán automáticamente para que puedas compartir tus fotografías durante la celebración.
+            </p>
+          </div>
+
+          {/* Sentimental Quote & Signature */}
+          <div className="mt-7 pt-6 border-t border-[#b89753]/20 max-w-md mx-auto text-center">
+            <p className="font-serif italic text-base sm:text-lg text-[#2c3e35]/90">
+              ¡Cada fotografía contará una parte de nuestra historia!
+            </p>
+            <p className="mt-2 font-['Great_Vibes'] text-3xl sm:text-4xl text-[#b89753] font-normal">
+              Jessica &amp; Jorge
+            </p>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-[#2c3e35]/60 font-semibold mt-1">
+              NUESTRO DÍA ESPECIAL
+            </p>
+          </div>
+
+          {isCoupleOrAdmin && (
+            <div className="mt-7 pt-4 border-t border-dashed border-[#b89753]/30">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium">
+                Vista de Administrador · Álbum activo el 10 de julio de 2027 (o actívalo en el panel para pruebas)
+              </span>
+            </div>
+          )}
         </div>
         <SectionCornerFlorals variant="compact" />
       </section>
@@ -662,15 +721,28 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
       <div className="max-w-6xl mx-auto relative z-10">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <p className="text-xs uppercase tracking-[0.22em] text-[#b89753] font-semibold">
-            Álbum Colaborativo · Foto Party
-          </p>
-          <h2 className="mt-2 font-serif text-4xl sm:text-5xl font-semibold text-[#2c3e35]">
-            Fotografías de Nuestra Boda
+          <div className="space-y-1 mb-2">
+            <p className="text-xs uppercase tracking-[0.26em] text-[#b89753] font-semibold text-center">
+              ÁLBUM COLABORATIVO
+            </p>
+            <p className="text-sm uppercase tracking-[0.22em] text-[#2c3e35]/80 font-bold text-center">
+              FOTO PARTY
+            </p>
+          </div>
+          <h2 className="mt-2 font-serif text-4xl sm:text-5xl font-semibold text-[#2c3e35] text-center">
+            ¡Sé nuestro PAPARAZZI!
           </h2>
-          <p className="mt-3 text-sm sm:text-base text-[#2c3e35]/75 leading-relaxed">
-            {config.welcomeNote}
+          <p className="mt-1 font-['Great_Vibes'] text-3xl sm:text-4xl text-[#b89753] font-normal text-center">
+            Captura cada momento
           </p>
+          <div className="mt-3 text-center space-y-1.5 text-[#2c3e35]/75 leading-relaxed max-w-xl mx-auto">
+            <p className="text-base font-medium text-[#2c3e35]">
+              ¡Ayúdanos a no perdernos ningún instante de nuestra boda!
+            </p>
+            <p className="text-sm">
+              Comparte tus fotografías y captura esos momentos espontáneos, divertidos y especiales que quizás nosotros no alcancemos a ver.
+            </p>
+          </div>
 
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <button
@@ -717,10 +789,10 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
                 <Camera className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-serif text-2xl font-semibold text-[#2c3e35] leading-none">
+                <h3 className="font-serif text-2xl font-semibold text-[#2c3e35] leading-none text-left">
                   Modo Paparazzi · Foto Party
                 </h3>
-                <p className="text-xs text-[#2c3e35]/65 mt-1">
+                <p className="text-xs text-[#2c3e35]/65 mt-1 text-left">
                   Sube hasta {MAX_PHOTOS_PER_POST} fotos por envío para el Foto Party y el recuerdo de los novios
                 </p>
               </div>

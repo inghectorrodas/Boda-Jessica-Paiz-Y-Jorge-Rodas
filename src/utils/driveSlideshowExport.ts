@@ -155,13 +155,13 @@ export function buildGoogleAppsScriptCode(
     folderId.replace(/[^a-zA-Z0-9_-]/g, '') || DEFAULT_DRIVE_FOLDER_ID;
 
   return `/**
- * Google Apps Script (Opcional/Avanzado) — Endpoint JSON para Álbum de Boda
+ * Google Apps Script — Respaldo Automático y Proyección para Álbum de Boda
  * 1. Abre https://script.google.com y crea un nuevo proyecto.
  * 2. Pega este código en Code.gs y guarda.
  * 3. Haz clic en Implementar > Nueva implementación > Tipo: Aplicación web.
  *    - Ejecutar como: Yo
  *    - Quién tiene acceso: Cualquier usuario
- * 4. Copia la URL /exec generada si deseas usar tu propio endpoint.
+ * 4. Copia la URL /exec generada y pégala en el panel "Google Drive y Ajustes".
  */
 const FOLDER_ID = '${safeFolderId}';
 
@@ -198,6 +198,63 @@ function doGet(e) {
         count: images.length,
         updatedAt: new Date().toISOString(),
         images: images
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        ok: false,
+        error: String(err)
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const folder = DriveApp.getFolderById(FOLDER_ID);
+    const fileName = String(body.fileName || ('boda_' + Date.now() + '.jpg')).slice(0, 120);
+    const photoId = String(body.photoId || '').slice(0, 80);
+    const mimeType = String(body.mimeType || 'image/jpeg');
+    const base64Data = String(body.base64Data || '');
+    const description = String(body.description || '').slice(0, 300);
+
+    if (!base64Data) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: false, error: 'Missing image data' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (photoId) {
+      const existingFiles = folder.getFiles();
+      while (existingFiles.hasNext()) {
+        const f = existingFiles.next();
+        if (f.getName().indexOf(photoId) !== -1) {
+          return ContentService
+            .createTextOutput(JSON.stringify({
+              ok: true,
+              duplicate: true,
+              id: f.getId(),
+              name: f.getName()
+            }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
+
+    const bytes = Utilities.base64Decode(base64Data);
+    const blob = Utilities.newBlob(bytes, mimeType, fileName);
+    const created = folder.createFile(blob);
+    if (description) {
+      created.setDescription(description);
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        ok: true,
+        id: created.getId(),
+        name: created.getName()
       }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {

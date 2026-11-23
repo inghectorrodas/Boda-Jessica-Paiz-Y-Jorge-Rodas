@@ -1181,15 +1181,16 @@ export const RsvpAndTablesSection: React.FC = () => {
                 </div>
               )}
               <p className="text-xs uppercase tracking-[0.22em] text-[#b89753] font-semibold">
-                Organización de Salón · Mesas de 10
+                Organización del Salón
               </p>
-              <h2 className="mt-2 font-serif text-4xl sm:text-5xl font-semibold text-[#2c3e35]">
-                Buscador y Distribución de Mesas
+              <h2 className="mt-2 font-serif text-4xl sm:text-5xl font-semibold text-[#2c3e35] leading-tight">
+                Encuentra tu lugar
+                <span className="block font-normal italic text-3xl sm:text-4xl text-[#7e919e] mt-1">
+                  en nuestra boda
+                </span>
               </h2>
-              <p className="mt-3 text-sm sm:text-base text-[#2c3e35]/75 leading-relaxed">
-                Ingresa tu apellido para localizar tu mesa. Las familias se
-                agrupan por afinidad de apellidos en mesas de 10 personas
-                alrededor de la Mesa Principal.
+              <p className="mt-3 text-sm sm:text-base text-[#2c3e35]/75 leading-relaxed max-w-2xl mx-auto">
+                ¡Queremos que disfrutes cada momento de este día tan especial! Escribe tu apellido en el buscador para localizar la mesa que te hemos asignado. Las familias se han organizado por afinidad de apellidos para que puedan compartir esta celebración juntos.
               </p>
             </div>
 
@@ -1217,40 +1218,45 @@ export const RsvpAndTablesSection: React.FC = () => {
               </div>
 
               {/* Search Feedback */}
-              <div className="mt-3 text-center min-h-[24px]">
-                {normalizedQuery ? (
-                  matchingTables.size > 0 ? (
-                    <p className="text-sm text-[#2c3e35] font-medium">
-                      Encontrado en{' '}
-                      <span className="text-[#b89753] font-semibold">
-                        {Array.from(matchingTables)
-                          .map((n) => `Mesa #${n}`)
-                          .join(', ')}
-                      </span>{' '}
-                      · Resaltada abajo en el plano del salón
-                    </p>
-                  ) : (
-                    <p className="text-sm text-[#2c3e35]/65">
-                      No encontramos el apellido &ldquo;{searchQuery}&rdquo; aún.{' '}
-                      <a
-                        href="#rsvp"
-                        className="text-[#b89753] underline underline-offset-4 hover:text-[#967739]"
-                      >
-                        Confirma tu asistencia arriba
-                      </a>{' '}
-                      para asignarte una mesa.
-                    </p>
-                  )
-                ) : (
-                  <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-[#2c3e35]/60 tabular-nums">
-                    <span>{tables.length} mesas configuradas</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{totalConfirmedGuests} lugares asignados</span>
-                    <span aria-hidden="true">·</span>
-                    <span>Capacidad de {TABLE_CAPACITY} personas por mesa</span>
-                  </div>
-                )}
-              </div>
+              {(normalizedQuery || isCoupleOrAdmin) && (
+                <div className="mt-3 text-center min-h-[24px]">
+                  {normalizedQuery ? (
+                    matchingTables.size > 0 ? (
+                      <p className="text-sm text-[#2c3e35] font-medium">
+                        Encontrado en{' '}
+                        <span className="text-[#b89753] font-semibold">
+                          {Array.from(matchingTables)
+                            .map((n) => `Mesa #${n}`)
+                            .join(', ')}
+                        </span>{' '}
+                        · Resaltada abajo en el plano del salón
+                      </p>
+                    ) : (
+                      <p className="text-sm text-[#2c3e35]/65">
+                        No encontramos el apellido &ldquo;{searchQuery}&rdquo; aún.{' '}
+                        <a
+                          href="#rsvp"
+                          className="text-[#b89753] underline underline-offset-4 hover:text-[#967739]"
+                        >
+                          Confirma tu asistencia arriba
+                        </a>{' '}
+                        para asignarte una mesa.
+                      </p>
+                    )
+                  ) : isCoupleOrAdmin ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2.5 text-xs text-[#2c3e35]/70 tabular-nums">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#2c3e35]/10 text-[10px] uppercase font-semibold text-[#2c3e35] tracking-wider">
+                        Solo Administradores
+                      </span>
+                      <span>{tables.length} mesas configuradas</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{totalConfirmedGuests} lugares asignados</span>
+                      <span aria-hidden="true">·</span>
+                      <span>Capacidad de {TABLE_CAPACITY} personas por mesa</span>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             {/* Head Table Anchor */}

@@ -143,9 +143,7 @@ export default function App() {
   const weddingDayName = formatWeddingDayName(weddingConfig.weddingDateISO);
   const countdownTargetISO = buildCountdownTargetISO(weddingConfig);
   const godparentsList =
-    weddingConfig.godparentsList && weddingConfig.godparentsList.length > 0
-      ? weddingConfig.godparentsList
-      : DEFAULT_GODPARENTS_LIST;
+    weddingConfig.godparentsList ?? DEFAULT_GODPARENTS_LIST;
 
   const isCoupleOrAdmin = Boolean(
     currentUser && isAuthorizedCoupleEmail(currentUser.email)
@@ -345,7 +343,7 @@ export default function App() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 text-center">
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#2c3e35]/55 font-medium">
+              <p className="text-xs uppercase tracking-[0.18em] text-[#2c3e35]/70 font-bold">
                 Padres de la Novia
               </p>
               <p className="font-serif text-xl sm:text-2xl font-medium text-[#2c3e35]">
@@ -353,7 +351,7 @@ export default function App() {
               </p>
             </div>
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.18em] text-[#2c3e35]/55 font-medium">
+              <p className="text-xs uppercase tracking-[0.18em] text-[#2c3e35]/70 font-bold">
                 Padres del Novio
               </p>
               <p className="font-serif text-xl sm:text-2xl font-medium text-[#2c3e35]">
@@ -362,26 +360,28 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mt-12 sm:mt-16 pt-10 border-t border-[#b89753]/20 max-w-2xl mx-auto space-y-6">
-            <h3 className="font-serif text-2xl sm:text-3xl font-semibold text-[#2c3e35] text-center">
-              Corte de Padrinos
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-              {godparentsList.map((g, idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#f7f5f0] border border-[#b89753]/25 rounded-2xl p-4 shadow-2xs"
-                >
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
-                    {g.roleName}
-                  </p>
-                  <p className="mt-1 font-serif text-lg font-medium text-[#2c3e35]">
-                    {g.names}
-                  </p>
-                </div>
-              ))}
+          {godparentsList.length > 0 && (
+            <div className="mt-12 sm:mt-16 pt-10 border-t border-[#b89753]/20 max-w-2xl mx-auto space-y-6">
+              <h3 className="font-serif text-2xl sm:text-3xl font-semibold text-[#2c3e35] text-center">
+                Corte de Padrinos
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+                {godparentsList.map((g, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-[#f7f5f0] border border-[#b89753]/25 rounded-2xl p-4 shadow-2xs"
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                      {g.roleName}
+                    </p>
+                    <p className="mt-1 font-serif text-lg font-medium text-[#2c3e35]">
+                      {g.names}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           </div>
           <SectionCornerFlorals variant="default" />
         </section>

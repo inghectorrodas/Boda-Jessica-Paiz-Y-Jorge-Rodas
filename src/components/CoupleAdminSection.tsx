@@ -51,6 +51,7 @@ import {
   onAuthStateChanged,
   sendEmailVerification,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   User,
 } from 'firebase/auth';
@@ -58,6 +59,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -70,6 +72,7 @@ import {
 } from 'firebase/firestore';
 import JSZip from 'jszip';
 import {
+  adminGoogleProvider,
   auth,
   db,
   handleFirestoreError,
@@ -358,7 +361,7 @@ export const CoupleAdminSection: React.FC = () => {
 
   // Wedding Details (Date, Events, Parents, Godparents) state
   const [weddingDateISO, setWeddingDateISO] = useState<string>(
-    DEFAULT_WEDDING_CONFIG.weddingDateISO ?? '2026-12-18'
+    DEFAULT_WEDDING_CONFIG.weddingDateISO ?? '2027-07-10'
   );
   const [ceremonyTime, setCeremonyTime] = useState<string>(
     DEFAULT_WEDDING_CONFIG.ceremonyTime ?? '16:00'
@@ -446,6 +449,22 @@ export const CoupleAdminSection: React.FC = () => {
   const adminPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
   const loadedAdminTokenRef = useRef<string>('');
 
+  type WeddingSectionSaveKey =
+    | 'date'
+    | 'ceremony'
+    | 'reception'
+    | 'parents'
+    | 'godparents'
+    | `godparent-${number}`
+    | 'gifts'
+    | 'all';
+
+  const [savingSectionKey, setSavingSectionKey] = useState<WeddingSectionSaveKey | null>(null);
+  const [savedSectionKey, setSavedSectionKey] = useState<WeddingSectionSaveKey | null>(null);
+  const [sectionSaveErrors, setSectionSaveErrors] = useState<Record<string, string>>({});
+  const [refreshingPermissions, setRefreshingPermissions] = useState(false);
+  const [permissionsRefreshedMsg, setPermissionsRefreshedMsg] = useState('');
+
   const [savingWeddingDetails, setSavingWeddingDetails] = useState(false);
   const [weddingDetailsSaved, setWeddingDetailsSaved] = useState(false);
   const [weddingDetailsError, setWeddingDetailsError] = useState('');
@@ -457,7 +476,6 @@ export const CoupleAdminSection: React.FC = () => {
   const [copiedAppsScript, setCopiedAppsScript] = useState(false);
 
   // Google Drive archive state (in-memory token only)
-  const AUTO_DRIVE_SYNC_INTERVAL_MS = 10 * 60 * 1000;
   const [driveToken, setDriveToken] = useState<string | null>(() =>
     getDriveAccessToken()
   );
@@ -469,28 +487,14 @@ export const CoupleAdminSection: React.FC = () => {
   const [driveError, setDriveError] = useState('');
   const [driveStatusMsg, setDriveStatusMsg] = useState('');
   const [confirmDriveModalOpen, setConfirmDriveModalOpen] = useState(false);
-  const [autoDriveSyncPref, setAutoDriveSyncPref] = useState<boolean>(() =>
-    typeof window !== 'undefined'
-      ? window.localStorage.getItem('boda_auto_drive_sync') !== 'false'
-      : true
-  );
-  const [driveAutoSyncConfirmed, setDriveAutoSyncConfirmed] = useState(false);
-  const [confirmEnableAutoEvery10Min, setConfirmEnableAutoEvery10Min] =
-    useState(true);
-  const [autoSyncCountdownLabel, setAutoSyncCountdownLabel] = useState('');
-  const [lastAutoDriveSyncLabel, setLastAutoDriveSyncLabel] = useState('');
-
-  const nextAutoDriveSyncAtRef = useRef<number | null>(null);
-  const isSyncingDriveRef = useRef(false);
-  const allPhotosRef = useRef<WeddingPhotoRecord[]>([]);
-  const driveTokenRef = useRef<string | null>(driveToken);
-  const driveFolderIdRef = useRef<string | null>(null);
-  const driveSyncedIdsRef = useRef<Set<string>>(driveSyncedIds);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setAuthReady(true);
+      if (user && isAuthorizedCoupleEmail(user.email)) {
+        void syncAdminTokenAndDoc(user, false);
+      }
     });
     const unsubDrive = initDriveAuth(
       (user, token) => {
@@ -511,8 +515,7 @@ export const CoupleAdminSection: React.FC = () => {
   const isAuthorizedCouple =
     Boolean(currentUser) && isAuthorizedCoupleEmail(currentUser?.email);
 
-  const isVerifiedCoupleAdmin =
-    isAuthorizedCouple && Boolean(currentUser?.emailVerified);
+  const isVerifiedCoupleAdmin = isAuthorizedCouple;
 
   const driveFolderId = useMemo(
     () => extractDriveFolderId(googlePhotosUrl),
@@ -645,7 +648,7 @@ export const CoupleAdminSection: React.FC = () => {
           setWeddingDateISO(
             merged.weddingDateISO ??
               DEFAULT_WEDDING_CONFIG.weddingDateISO ??
-              '2026-12-18'
+              '2027-07-10'
           );
           setCeremonyTime(
             merged.ceremonyTime ?? DEFAULT_WEDDING_CONFIG.ceremonyTime ?? '16:00'
@@ -813,6 +816,78 @@ export const CoupleAdminSection: React.FC = () => {
     }
   };
 
+  const syncAdminTokenAndDoc = async (
+    user: User,
+    forceTokenRefresh = false
+  ): Promise<void> => {
+    if (!user || !user.email) return;
+    const emailLower = user.email.toLowerCase();
+    if (
+      emailLower !== 'ing.hectorrodas@gmail.com' &&
+      emailLower !== 'jorgerodad@gmail.com'
+    ) {
+      return;
+    }
+    try {
+      if (forceTokenRefresh) {
+        await user.getIdToken(true);
+      }
+      const adminDocRef = doc(db, 'admins', user.uid);
+      const existingSnap = await getDoc(adminDocRef);
+      if (!existingSnap.exists()) {
+        const isNovio = emailLower === 'jorgerodad@gmail.com';
+        await setDoc(adminDocRef, {
+          email: emailLower,
+          role: isNovio ? 'novio' : 'admin',
+          label: isNovio ? 'Jorge Luis (Novio)' : 'Ing. Héctor Rodas (Admin)',
+          createdAt: serverTimestamp(),
+        }, { merge: true });
+      }
+    } catch (syncErr) {
+      console.warn('Admin doc sync check:', syncErr);
+    }
+  };
+
+  const handleAdminGoogleLogin = async () => {
+    setAuthError('');
+    setAuthLoading(true);
+    try {
+      const cred = await signInWithPopup(auth, adminGoogleProvider);
+      if (!isAuthorizedCoupleEmail(cred.user.email)) {
+        await signOut(auth);
+        setAuthError(
+          `La cuenta ${cred.user.email ?? ''} no está autorizada como administrador. Utiliza admin (ing.hectorrodas@gmail.com) o novio (jorgerodad@gmail.com).`
+        );
+        return;
+      }
+      await syncAdminTokenAndDoc(cred.user, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('popup-closed-by-user')) {
+        setAuthError(`No se pudo iniciar sesión con Google: ${msg}`);
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleRefreshAdminToken = async () => {
+    if (!currentUser) return;
+    setRefreshingPermissions(true);
+    setPermissionsRefreshedMsg('');
+    try {
+      await currentUser.getIdToken(true);
+      await syncAdminTokenAndDoc(currentUser, true);
+      setCurrentUser(auth.currentUser ? { ...auth.currentUser } : null);
+      setPermissionsRefreshedMsg('Permisos Firestore verificados');
+      window.setTimeout(() => setPermissionsRefreshedMsg(''), 3500);
+    } catch (err) {
+      console.warn('Error refrescando permisos:', err);
+    } finally {
+      setRefreshingPermissions(false);
+    }
+  };
+
   const handleSendVerification = async () => {
     if (!currentUser) return;
     try {
@@ -841,59 +916,37 @@ export const CoupleAdminSection: React.FC = () => {
     clearDriveAccessToken();
     setDriveToken(null);
     setDriveEmail(null);
-    setDriveAutoSyncConfirmed(false);
-    nextAutoDriveSyncAtRef.current = null;
     await signOut(auth);
     setIdentifier('');
     setPassword('');
     setAuthError('');
   };
 
-  useEffect(() => {
-    allPhotosRef.current = allPhotos;
-  }, [allPhotos]);
-
-  useEffect(() => {
-    driveTokenRef.current = driveToken;
-  }, [driveToken]);
-
-  useEffect(() => {
-    driveFolderIdRef.current = driveFolderId;
-  }, [driveFolderId]);
-
-  useEffect(() => {
-    driveSyncedIdsRef.current = driveSyncedIds;
-  }, [driveSyncedIds]);
-
   const refreshDriveSyncedFiles = async (
     tokenOverride?: string,
     folderOverride?: string | null
-  ): Promise<Set<string> | null> => {
-    const token = tokenOverride || driveTokenRef.current || getDriveAccessToken();
-    const folder = folderOverride ?? driveFolderIdRef.current;
-    if (!token || !folder) return null;
+  ) => {
+    const token = tokenOverride || driveToken || getDriveAccessToken();
+    const folder = folderOverride ?? driveFolderId;
+    if (!token || !folder) return;
 
     try {
       const files = await listDriveFolderFiles(folder, token);
       const synced = new Set<string>();
-      for (const photo of allPhotosRef.current) {
+      for (const photo of allPhotos) {
         if (files.some((f) => f.name.includes(photo.id))) {
           synced.add(photo.id);
         }
       }
       setDriveSyncedIds(synced);
-      return synced;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('401')) {
         setDriveToken(null);
-        setDriveAutoSyncConfirmed(false);
-        nextAutoDriveSyncAtRef.current = null;
         setDriveError(
-          'Tu sesión de Google Drive expiró (~1 h); presiona Sign in with Google para reconectar y reanudar el respaldo automático.'
+          'Tu sesión de Google Drive expiró; vuelve a conectarte con Google.'
         );
       }
-      return null;
     }
   };
 
@@ -967,53 +1020,25 @@ export const CoupleAdminSection: React.FC = () => {
     [allPhotos, driveSyncedIds]
   );
 
-  const runDriveBackupPass = async (options?: { isScheduled?: boolean }) => {
-    if (isSyncingDriveRef.current) return;
-    const token = driveTokenRef.current || getDriveAccessToken();
-    const folder = driveFolderIdRef.current;
-    if (!token || !folder) return;
+  const handleSyncAllPendingToDrive = async () => {
+    setConfirmDriveModalOpen(false);
+    const token = driveToken || getDriveAccessToken();
+    if (!token || !driveFolderId || pendingDrivePhotos.length === 0) return;
 
-    isSyncingDriveRef.current = true;
-    setIsSyncingDrive(true);
     setDriveError('');
+    setDriveStatusMsg('');
+    setIsSyncingDrive(true);
     let uploadedCount = 0;
 
     try {
-      // Refresh Drive listing first so we never upload duplicates
-      const refreshedSet = await refreshDriveSyncedFiles(token, folder);
-      const currentSynced = refreshedSet ?? driveSyncedIdsRef.current;
-      const pendingList = allPhotosRef.current.filter(
-        (p) => !currentSynced.has(p.id)
-      );
-
-      const nowTime = new Date().toLocaleTimeString('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-
-      if (pendingList.length === 0) {
-        if (options?.isScheduled) {
-          setLastAutoDriveSyncLabel(
-            `Última revisión automática: ${nowTime} · Todo al día`
-          );
-        } else {
-          setDriveStatusMsg(
-            `Todas las fotografías (${allPhotosRef.current.length}) ya están respaldadas en Google Drive.`
-          );
-        }
-        return;
-      }
-
-      for (let i = 0; i < pendingList.length; i++) {
-        const photo = pendingList[i];
+      for (let i = 0; i < pendingDrivePhotos.length; i++) {
+        const photo = pendingDrivePhotos[i];
         setDriveSyncProgress(
-          options?.isScheduled
-            ? `Respaldo automático: subiendo ${i + 1} de ${pendingList.length}...`
-            : `Subiendo ${i + 1} de ${pendingList.length}...`
+          `Subiendo ${i + 1} de ${pendingDrivePhotos.length}...`
         );
         const blob = dataUrlToBlob(photo.imageData);
         await uploadBlobToGoogleDriveFolder({
-          folderId: folder,
+          folderId: driveFolderId,
           accessToken: token,
           fileName: buildDrivePhotoFilename(photo),
           blob,
@@ -1025,11 +1050,6 @@ export const CoupleAdminSection: React.FC = () => {
         setDriveSyncedIds((prev) => new Set(prev).add(photo.id));
       }
 
-      if (options?.isScheduled) {
-        setLastAutoDriveSyncLabel(
-          `Último respaldo automático: ${nowTime} (+${uploadedCount} foto${uploadedCount === 1 ? '' : 's'})`
-        );
-      }
       setDriveStatusMsg(
         `¡Listo! Se archivaron ${uploadedCount} fotografía(s) en tu carpeta de Google Drive.`
       );
@@ -1037,114 +1057,30 @@ export const CoupleAdminSection: React.FC = () => {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('401')) {
         setDriveToken(null);
-        setDriveAutoSyncConfirmed(false);
-        nextAutoDriveSyncAtRef.current = null;
-        setDriveError(
-          'Tu sesión de Google Drive expiró (~1 h); vuelve a presionar Sign in with Google para reanudar el respaldo automático.'
-        );
+        setDriveError('Tu sesión expiró; vuelve a conectar Google Drive.');
       } else {
         setDriveError(
           `Se subieron ${uploadedCount} foto(s), pero ocurrió un error de permisos o conexión con Google Drive.`
         );
       }
     } finally {
-      isSyncingDriveRef.current = false;
       setIsSyncingDrive(false);
       setDriveSyncProgress('');
     }
   };
 
-  const handleOpenConfirmDriveModal = (preferAutoSync = true) => {
-    setConfirmEnableAutoEvery10Min(preferAutoSync ? true : autoDriveSyncPref);
-    setConfirmDriveModalOpen(true);
-  };
-
-  const handleSyncAllPendingToDrive = async () => {
-    setConfirmDriveModalOpen(false);
-    if (confirmEnableAutoEvery10Min) {
-      setAutoDriveSyncPref(true);
-      setDriveAutoSyncConfirmed(true);
-      nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('boda_auto_drive_sync', 'true');
-      }
-    } else {
-      setAutoDriveSyncPref(false);
-      setDriveAutoSyncConfirmed(false);
-      nextAutoDriveSyncAtRef.current = null;
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('boda_auto_drive_sync', 'false');
-      }
-    }
-
-    await runDriveBackupPass({ isScheduled: false });
-  };
-
-  const handleToggleAutoDriveSync = () => {
-    if (autoDriveSyncPref && driveAutoSyncConfirmed) {
-      setAutoDriveSyncPref(false);
-      nextAutoDriveSyncAtRef.current = null;
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('boda_auto_drive_sync', 'false');
-      }
-      return;
-    }
-
-    if (!driveAutoSyncConfirmed) {
-      handleOpenConfirmDriveModal(true);
-      return;
-    }
-
-    setAutoDriveSyncPref(true);
-    nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('boda_auto_drive_sync', 'true');
-    }
-  };
-
-  const isAutoDriveSyncRunning = Boolean(
-    isVerifiedCoupleAdmin &&
-      driveToken &&
-      driveFolderId &&
-      autoDriveSyncPref &&
-      driveAutoSyncConfirmed
-  );
-
-  // Automatic 10-minute scheduler for Google Drive backup
+  // Auto-sync pending photos to Google Drive every 10 minutes when Drive is connected
   useEffect(() => {
-    if (!isAutoDriveSyncRunning) {
-      nextAutoDriveSyncAtRef.current = null;
-      setAutoSyncCountdownLabel('');
-      return;
-    }
+    if (!driveToken || !driveFolderId) return;
 
-    if (!nextAutoDriveSyncAtRef.current) {
-      nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
-    }
-
-    const tick = window.setInterval(() => {
-      const targetAt =
-        nextAutoDriveSyncAtRef.current ??
-        Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
-      const remainingMs = Math.max(0, targetAt - Date.now());
-      const totalSec = Math.ceil(remainingMs / 1000);
-      const mins = Math.floor(totalSec / 60);
-      const secs = totalSec % 60;
-      setAutoSyncCountdownLabel(
-        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-      );
-
-      if (remainingMs <= 0) {
-        nextAutoDriveSyncAtRef.current = Date.now() + AUTO_DRIVE_SYNC_INTERVAL_MS;
-        void runDriveBackupPass({ isScheduled: true });
+    const intervalId = window.setInterval(() => {
+      if (!isSyncingDrive && pendingDrivePhotos.length > 0) {
+        void handleSyncAllPendingToDrive();
       }
-    }, 1000);
+    }, 10 * 60 * 1000);
 
-    return () => {
-      window.clearInterval(tick);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAutoDriveSyncRunning]);
+    return () => window.clearInterval(intervalId);
+  }, [driveToken, driveFolderId, isSyncingDrive, pendingDrivePhotos.length]);
 
   const stats = useMemo(() => {
     const confirmed = rsvps.filter((r) => r.attending);
@@ -1735,7 +1671,7 @@ export const CoupleAdminSection: React.FC = () => {
       weddingDateISO
     )
       ? weddingDateISO
-      : '2026-12-18';
+      : '2027-07-10';
     const cleanGodparents = godparentsList
       .map((item) => ({
         roleName: item.roleName.trim().slice(0, 100),
@@ -1776,8 +1712,15 @@ export const CoupleAdminSection: React.FC = () => {
       )
     );
 
+    const sanitizeUrl = (url: string) => {
+      const trimmed = url.trim().slice(0, 500);
+      if (!trimmed) return '';
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `https://${trimmed}`;
+    };
+
     return {
-      googlePhotosUrl: trimmedUrl,
+      googlePhotosUrl: sanitizeUrl(googlePhotosUrl),
       appsScriptUrl: trimmedScriptUrl,
       welcomeNote:
         welcomeNote.trim().slice(0, 300) || DEFAULT_WEDDING_CONFIG.welcomeNote,
@@ -1786,7 +1729,7 @@ export const CoupleAdminSection: React.FC = () => {
       tablesVisibleToGuests,
       totalTables: Math.min(50, Math.max(1, Number(totalTables) || 10)),
       heroPhotoUrl:
-        heroPhotoUrl.trim().slice(0, 500) ||
+        sanitizeUrl(heroPhotoUrl) ||
         (DEFAULT_WEDDING_CONFIG.heroPhotoUrl ?? ''),
       adminPhone:
         adminPhone.trim().slice(0, 30) ||
@@ -1805,13 +1748,13 @@ export const CoupleAdminSection: React.FC = () => {
         ceremonyVenue.trim().slice(0, 120) ||
         (DEFAULT_WEDDING_CONFIG.ceremonyVenue ?? 'Parroquia Principal'),
       ceremonyAddress: ceremonyAddress.trim().slice(0, 200),
-      ceremonyMapUrl: ceremonyMapUrl.trim().slice(0, 500),
+      ceremonyMapUrl: sanitizeUrl(ceremonyMapUrl),
       receptionTime: safeReceptionTime,
       receptionVenue:
         receptionVenue.trim().slice(0, 120) ||
         (DEFAULT_WEDDING_CONFIG.receptionVenue ?? 'Salón de Eventos Elegance'),
       receptionAddress: receptionAddress.trim().slice(0, 200),
-      receptionMapUrl: receptionMapUrl.trim().slice(0, 500),
+      receptionMapUrl: sanitizeUrl(receptionMapUrl),
       brideParents:
         brideParents.trim().slice(0, 160) ||
         (DEFAULT_WEDDING_CONFIG.brideParents ?? ''),
@@ -1837,8 +1780,7 @@ export const CoupleAdminSection: React.FC = () => {
       hideDefaultHeroPhotos:
         overrides?.hideDefaultHeroPhotos ?? hideDefaultHeroPhotos,
       customAudioMode: resolvedAudioMode,
-      customAudioUrl:
-        resolvedAudioUrl.startsWith('https://') ? resolvedAudioUrl : '',
+      customAudioUrl: sanitizeUrl(resolvedAudioUrl),
       customAudioTitle: resolvedAudioTitle,
       customAudioMime: resolvedAudioMime,
       customAudioChunkCount: resolvedAudioChunkCount,
@@ -1846,6 +1788,47 @@ export const CoupleAdminSection: React.FC = () => {
       customAudioDurationSec: resolvedAudioDuration,
       updatedAt: serverTimestamp(),
     };
+  };
+
+  const isPermissionDeniedError = (err: unknown): boolean => {
+    if (!err) return false;
+    const msg = err instanceof Error ? err.message : String(err);
+    return (
+      msg.includes('permission-denied') ||
+      msg.includes('PERMISSION_DENIED') ||
+      msg.includes('Missing or insufficient permissions')
+    );
+  };
+
+  const formatFirestoreSaveError = (err: unknown, user: User | null): string => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isPermissionDeniedError(err)) {
+      const email = user?.email ?? 'sin sesión';
+      return `Permiso denegado por reglas de Firestore para ${email}. Verifica que el correo esté verificado o haz clic en "Refrescar permisos" en la barra superior.`;
+    }
+    if (msg.includes('offline') || msg.includes('unavailable')) {
+      return 'Sin conexión con Firestore. Revisa tu conexión a Internet.';
+    }
+    return `Error al guardar: ${msg.slice(0, 180)}`;
+  };
+
+  const executeAdminFirestoreWrite = async (
+    writeFn: () => Promise<void>
+  ): Promise<void> => {
+    try {
+      await writeFn();
+    } catch (firstErr) {
+      if (isPermissionDeniedError(firstErr) && auth.currentUser) {
+        try {
+          await syncAdminTokenAndDoc(auth.currentUser, true);
+          await writeFn();
+          return;
+        } catch (retryErr) {
+          throw retryErr;
+        }
+      }
+      throw firstErr;
+    }
   };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -1871,103 +1854,192 @@ export const CoupleAdminSection: React.FC = () => {
 
     setSavingSettings(true);
     try {
-      await setDoc(doc(db, 'wedding_settings', 'main'), buildPersistedSettingsPayload());
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), buildPersistedSettingsPayload(), { merge: true });
+      });
       setSettingsSaved(true);
       window.setTimeout(() => setSettingsSaved(false), 3500);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.WRITE,
-          'wedding_settings/main'
-        );
-      } catch {
-        setSettingsError('No pudimos guardar los ajustes en este momento.');
-      }
+      setSettingsError(formatFirestoreSaveError(error, currentUser));
     } finally {
       setSavingSettings(false);
     }
   };
 
-  const handleSaveWeddingDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setWeddingDetailsError('');
-    setWeddingDetailsSaved(false);
+  const persistWeddingSection = async (
+    sectionKey: WeddingSectionSaveKey,
+    godparentIndex?: number
+  ) => {
+    setSectionSaveErrors((prev) => ({ ...prev, [sectionKey]: '' }));
+    setSavedSectionKey(null);
 
-    if (
-      !/^20[2-9]\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(weddingDateISO)
-    ) {
-      setWeddingDetailsError('Selecciona una fecha válida para la boda.');
-      return;
+    if (sectionKey === 'date' || sectionKey === 'all') {
+      if (
+        !/^20[2-9]\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(weddingDateISO)
+      ) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]: 'Selecciona una fecha válida para la boda (2026-2099).',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError('Selecciona una fecha válida para la boda.');
+        }
+        return;
+      }
     }
 
-    if (!ceremonyVenue.trim() || !receptionVenue.trim()) {
-      setWeddingDetailsError(
-        'Ingresa el lugar de la Ceremonia Religiosa y de la Recepción.'
+    if (sectionKey === 'ceremony' || sectionKey === 'all') {
+      if (!ceremonyVenue.trim()) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]: 'Ingresa el nombre o lugar de la Ceremonia Religiosa.',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError('Ingresa el lugar de la Ceremonia Religiosa.');
+        }
+        return;
+      }
+      const cleanCeremonyMap = ceremonyMapUrl.trim();
+      if (cleanCeremonyMap && !cleanCeremonyMap.startsWith('https://')) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]:
+            'El enlace de Google Maps de la Ceremonia debe comenzar con https:// (o déjalo vacío).',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError(
+            'El enlace de Google Maps de la Ceremonia debe comenzar con https://'
+          );
+        }
+        return;
+      }
+    }
+
+    if (sectionKey === 'reception' || sectionKey === 'all') {
+      if (!receptionVenue.trim()) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]: 'Ingresa el nombre o lugar del Salón de Recepción.',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError('Ingresa el lugar de la Recepción.');
+        }
+        return;
+      }
+      const cleanReceptionMap = receptionMapUrl.trim();
+      if (cleanReceptionMap && !cleanReceptionMap.startsWith('https://')) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]:
+            'El enlace de Google Maps de la Recepción debe comenzar con https:// (o déjalo vacío).',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError(
+            'El enlace de Google Maps de la Recepción debe comenzar con https://'
+          );
+        }
+        return;
+      }
+    }
+
+    if (sectionKey === 'parents' || sectionKey === 'all') {
+      if (!brideParents.trim() || !groomParents.trim()) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]:
+            'Ingresa los nombres de los Padres de la Novia y Padres del Novio.',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError(
+            'Ingresa los nombres de los Padres de la Novia y Padres del Novio.'
+          );
+        }
+        return;
+      }
+    }
+
+    if (typeof godparentIndex === 'number') {
+      const item = godparentsList[godparentIndex];
+      if (!item || !item.roleName.trim() || !item.names.trim()) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]:
+            'Ingresa tanto el rol/título como el nombre(s) de este padrino antes de guardar.',
+        }));
+        return;
+      }
+    }
+
+    if (sectionKey === 'godparents' || sectionKey === 'all') {
+      const hasIncomplete = godparentsList.some(
+        (g) =>
+          (g.roleName.trim().length > 0 && g.names.trim().length === 0) ||
+          (g.roleName.trim().length === 0 && g.names.trim().length > 0)
       );
-      return;
+      if (hasIncomplete) {
+        setSectionSaveErrors((prev) => ({
+          ...prev,
+          [sectionKey]:
+            'Completa el rol y los nombres en cada fila de padrinos (o elimina las filas vacías).',
+        }));
+        if (sectionKey === 'all') {
+          setWeddingDetailsError(
+            'Completa el rol y los nombres en cada fila de padrinos (o elimina las filas vacías).'
+          );
+        }
+        return;
+      }
     }
 
-    const cleanCeremonyMap = ceremonyMapUrl.trim();
-    if (cleanCeremonyMap && !cleanCeremonyMap.startsWith('https://')) {
-      setWeddingDetailsError(
-        'El enlace de Google Maps de la Ceremonia debe comenzar con https:// (o déjalo vacío para búsqueda automática).'
-      );
-      return;
+    setSavingSectionKey(sectionKey);
+    if (sectionKey === 'all') {
+      setSavingWeddingDetails(true);
+      setWeddingDetailsError('');
+      setWeddingDetailsSaved(false);
     }
 
-    const cleanReceptionMap = receptionMapUrl.trim();
-    if (cleanReceptionMap && !cleanReceptionMap.startsWith('https://')) {
-      setWeddingDetailsError(
-        'El enlace de Google Maps de la Recepción debe comenzar con https:// (o déjalo vacío para búsqueda automática).'
-      );
-      return;
-    }
-
-    if (!brideParents.trim() || !groomParents.trim()) {
-      setWeddingDetailsError(
-        'Ingresa los nombres de los Padres de la Novia y Padres del Novio.'
-      );
-      return;
-    }
-
-    const hasIncompleteGodparent = godparentsList.some(
-      (g) =>
-        (g.roleName.trim().length > 0 && g.names.trim().length === 0) ||
-        (g.roleName.trim().length === 0 && g.names.trim().length > 0)
-    );
-    if (hasIncompleteGodparent) {
-      setWeddingDetailsError(
-        'Completa tanto el rol como los nombres en cada fila de padrinos (o elimina la fila vacía).'
-      );
-      return;
-    }
-
-    setSavingWeddingDetails(true);
     try {
-      await setDoc(doc(db, 'wedding_settings', 'main'), buildPersistedSettingsPayload());
-      setWeddingDetailsSaved(true);
-      window.setTimeout(() => setWeddingDetailsSaved(false), 3500);
+      const payload = buildPersistedSettingsPayload();
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), payload, { merge: true });
+      });
+      setSavedSectionKey(sectionKey);
+      if (sectionKey === 'all') {
+        setWeddingDetailsSaved(true);
+      }
+      window.setTimeout(() => {
+        setSavedSectionKey((curr) => (curr === sectionKey ? null : curr));
+        if (sectionKey === 'all') {
+          setWeddingDetailsSaved(false);
+        }
+      }, 3500);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.WRITE,
-          'wedding_settings/main'
-        );
-      } catch {
-        setWeddingDetailsError(
-          'No pudimos guardar los datos de la boda en este momento.'
-        );
+      const errorMsg = formatFirestoreSaveError(error, currentUser);
+      setSectionSaveErrors((prev) => ({ ...prev, [sectionKey]: errorMsg }));
+      if (sectionKey === 'all') {
+        setWeddingDetailsError(errorMsg);
       }
     } finally {
-      setSavingWeddingDetails(false);
+      setSavingSectionKey((curr) => (curr === sectionKey ? null : curr));
+      if (sectionKey === 'all') {
+        setSavingWeddingDetails(false);
+      }
     }
+  };
+
+  const handleSaveWeddingDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await persistWeddingSection('all');
   };
 
   const handleAddGodparentRow = () => {
     if (godparentsList.length >= 12) return;
     setGodparentsList((prev) => [...prev, { roleName: '', names: '' }]);
+    setSectionSaveErrors((prev) => {
+      const next = { ...prev };
+      delete next.godparents;
+      return next;
+    });
   };
 
   const handleUpdateGodparentRow = (
@@ -1980,10 +2052,22 @@ export const CoupleAdminSection: React.FC = () => {
         idx === index ? { ...item, [field]: value } : item
       )
     );
+    setSectionSaveErrors((prev) => {
+      const next = { ...prev };
+      delete next[`godparent-${index}`];
+      delete next.godparents;
+      return next;
+    });
   };
 
   const handleRemoveGodparentRow = (index: number) => {
     setGodparentsList((prev) => prev.filter((_, idx) => idx !== index));
+    setSectionSaveErrors((prev) => {
+      const next = { ...prev };
+      delete next[`godparent-${index}`];
+      delete next.godparents;
+      return next;
+    });
   };
 
   const handleGiftQrFileChange = async (
@@ -2340,6 +2424,11 @@ export const CoupleAdminSection: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
+
     setAudioMediaError('');
     setAudioMediaSuccess('');
     setUploadingAudio(true);
@@ -2368,17 +2457,22 @@ export const CoupleAdminSection: React.FC = () => {
       }
 
       setAudioUploadProgress('Activando música en la invitación...');
-      await setDoc(
-        doc(db, 'wedding_settings', 'main'),
-        buildPersistedSettingsPayload({
-          customAudioMode: 'uploaded',
-          customAudioTitle: prepared.title,
-          customAudioMime: prepared.mimeType,
-          customAudioChunkCount: prepared.chunks.length,
-          customAudioUpdatedToken: trackToken,
-          customAudioDurationSec: prepared.durationSec,
-        })
-      );
+      const nextSettingsPayload = buildPersistedSettingsPayload({
+        customAudioMode: 'uploaded',
+        customAudioTitle: prepared.title,
+        customAudioMime: prepared.mimeType,
+        customAudioChunkCount: prepared.chunks.length,
+        customAudioUpdatedToken: trackToken,
+        customAudioDurationSec: prepared.durationSec,
+      });
+
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          nextSettingsPayload,
+          { merge: true }
+        );
+      });
 
       loadedAdminTokenRef.current = trackToken;
       setAdminPreviewBlobUrl((prev) => {
@@ -2395,7 +2489,7 @@ export const CoupleAdminSection: React.FC = () => {
 
       void cleanupOldAudioChunks(trackToken);
       setAudioMediaSuccess(
-        `¡Audio "${prepared.title}" subido y activado! Todos los invitados escucharán esta canción al abrir la invitación.`
+        `¡Canción "${prepared.title}" guardada y activada! Reemplazó la música anterior y se escuchará al abrir la invitación.`
       );
       window.setTimeout(() => setAudioMediaSuccess(''), 5500);
     } catch (err) {
@@ -2431,14 +2525,17 @@ export const CoupleAdminSection: React.FC = () => {
     try {
       const nextTitle =
         customAudioTitle.trim().slice(0, 120) || 'Música Personalizada';
-      await setDoc(
-        doc(db, 'wedding_settings', 'main'),
-        buildPersistedSettingsPayload({
-          customAudioMode: 'url',
-          customAudioUrl: cleanUrl,
-          customAudioTitle: nextTitle,
-        })
-      );
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          buildPersistedSettingsPayload({
+            customAudioMode: 'url',
+            customAudioUrl: cleanUrl,
+            customAudioTitle: nextTitle,
+          }),
+          { merge: true }
+        );
+      });
       setCustomAudioMode('url');
       setCustomAudioTitle(nextTitle);
       setAudioMediaSuccess('Enlace de música guardado y activado.');
@@ -2467,12 +2564,15 @@ export const CoupleAdminSection: React.FC = () => {
       setIsAdminPreviewPlaying(false);
     }
     try {
-      await setDoc(
-        doc(db, 'wedding_settings', 'main'),
-        buildPersistedSettingsPayload({
-          customAudioMode: 'synth',
-        })
-      );
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          buildPersistedSettingsPayload({
+            customAudioMode: 'synth',
+          }),
+          { merge: true }
+        );
+      });
       setCustomAudioMode('synth');
       setAudioMediaSuccess('Melodía ambiental romántica integrada activada.');
       window.setTimeout(() => setAudioMediaSuccess(''), 3500);
@@ -2501,19 +2601,22 @@ export const CoupleAdminSection: React.FC = () => {
     }
     try {
       await cleanupOldAudioChunks('__none__');
-      await setDoc(
-        doc(db, 'wedding_settings', 'main'),
-        buildPersistedSettingsPayload({
-          customAudioMode: customAudioUrl.startsWith('https://')
-            ? 'url'
-            : 'synth',
-          customAudioTitle: 'Melodía Ambiental Romántica',
-          customAudioMime: 'audio/mpeg',
-          customAudioChunkCount: 0,
-          customAudioUpdatedToken: '',
-          customAudioDurationSec: 0,
-        })
-      );
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(
+          doc(db, 'wedding_settings', 'main'),
+          buildPersistedSettingsPayload({
+            customAudioMode: customAudioUrl.startsWith('https://')
+              ? 'url'
+              : 'synth',
+            customAudioTitle: 'Melodía Ambiental Romántica',
+            customAudioMime: 'audio/mpeg',
+            customAudioChunkCount: 0,
+            customAudioUpdatedToken: '',
+            customAudioDurationSec: 0,
+          }),
+          { merge: true }
+        );
+      });
       setAdminPreviewBlobUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return '';
@@ -2665,8 +2768,23 @@ export const CoupleAdminSection: React.FC = () => {
                 <span>Ingresar con Contraseña</span>
               </button>
             </form>
+
+            <div className="relative my-4 flex items-center justify-center">
+              <div className="border-t border-[#b89753]/25 w-full" />
+              <span className="bg-white px-3 text-[11px] uppercase tracking-wider text-[#2c3e35]/50 whitespace-nowrap">
+                o accede con Google
+              </span>
+              <div className="border-t border-[#b89753]/25 w-full" />
+            </div>
+
+            <GoogleSignInButton
+              onClick={() => void handleAdminGoogleLogin()}
+              disabled={authLoading}
+              label="Ingresar con Google (Admin / Novio)"
+              className="w-full h-11"
+            />
           </div>
-        ) : !currentUser?.emailVerified ? (
+        ) : !currentUser?.emailVerified && !isAuthorizedCouple ? (
           /* Gate 2: Email/Password User Needs Verification */
           <div className="max-w-lg mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-8 text-center shadow-sm space-y-4">
             <MailCheck className="w-10 h-10 text-[#b89753] mx-auto" />
@@ -2720,12 +2838,37 @@ export const CoupleAdminSection: React.FC = () => {
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-[#b89753] font-semibold">
-                    Sesión activa · {activeRoleLabel}
-                  </p>
-                  <p className="text-sm font-medium text-[#2c3e35]">
-                    {currentUser.email}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs uppercase tracking-[0.18em] text-[#b89753] font-semibold">
+                      Sesión activa · {activeRoleLabel}
+                    </p>
+                    <span className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-semibold text-center">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      Reglas Firestore OK
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5 mt-0.5">
+                    <p className="text-sm font-medium text-[#2c3e35]">
+                      {currentUser?.email}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleRefreshAdminToken()}
+                      disabled={refreshingPermissions}
+                      className="inline-flex items-center gap-1 text-[11px] text-[#b89753] hover:text-[#967739] font-medium underline underline-offset-2 cursor-pointer"
+                      title="Forzar actualización de credenciales de administrador en Firestore"
+                    >
+                      <RefreshCw
+                        className={`w-3 h-3 ${refreshingPermissions ? 'animate-spin' : ''}`}
+                      />
+                      <span>Refrescar permisos</span>
+                    </button>
+                    {permissionsRefreshedMsg && (
+                      <span className="text-[11px] text-emerald-700 font-medium">
+                        ✓ {permissionsRefreshedMsg}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -3480,6 +3623,33 @@ export const CoupleAdminSection: React.FC = () => {
                       </p>
                     </div>
                   </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                    <button
+                      type="button"
+                      onClick={() => void persistWeddingSection('date')}
+                      disabled={savingSectionKey === 'date'}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                    >
+                      {savingSectionKey === 'date' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                      )}
+                      <span>Guardar Fecha</span>
+                    </button>
+                    {savedSectionKey === 'date' && (
+                      <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Fecha de la boda guardada en la invitación
+                      </span>
+                    )}
+                  </div>
+                  {sectionSaveErrors.date && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                      {sectionSaveErrors.date}
+                    </p>
+                  )}
                 </div>
 
                 {/* Ceremony & Reception Cards */}
@@ -3572,6 +3742,33 @@ export const CoupleAdminSection: React.FC = () => {
                         className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
                       />
                     </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                      <button
+                        type="button"
+                        onClick={() => void persistWeddingSection('ceremony')}
+                        disabled={savingSectionKey === 'ceremony'}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                      >
+                        {savingSectionKey === 'ceremony' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                        )}
+                        <span>Guardar Ceremonia</span>
+                      </button>
+                      {savedSectionKey === 'ceremony' && (
+                        <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Ceremonia guardada
+                        </span>
+                      )}
+                    </div>
+                    {sectionSaveErrors.ceremony && (
+                      <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                        {sectionSaveErrors.ceremony}
+                      </p>
+                    )}
                   </div>
 
                   {/* Recepción */}
@@ -3662,6 +3859,33 @@ export const CoupleAdminSection: React.FC = () => {
                         className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-xs text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
                       />
                     </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                      <button
+                        type="button"
+                        onClick={() => void persistWeddingSection('reception')}
+                        disabled={savingSectionKey === 'reception'}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                      >
+                        {savingSectionKey === 'reception' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                        )}
+                        <span>Guardar Recepción</span>
+                      </button>
+                      {savedSectionKey === 'reception' && (
+                        <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Recepción guardada
+                        </span>
+                      )}
+                    </div>
+                    {sectionSaveErrors.reception && (
+                      <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                        {sectionSaveErrors.reception}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -3715,6 +3939,33 @@ export const CoupleAdminSection: React.FC = () => {
                       />
                     </div>
                   </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                    <button
+                      type="button"
+                      onClick={() => void persistWeddingSection('parents')}
+                      disabled={savingSectionKey === 'parents'}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                    >
+                      {savingSectionKey === 'parents' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                      )}
+                      <span>Guardar Padres</span>
+                    </button>
+                    {savedSectionKey === 'parents' && (
+                      <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Nombres de los padres guardados
+                      </span>
+                    )}
+                  </div>
+                  {sectionSaveErrors.parents && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                      {sectionSaveErrors.parents}
+                    </p>
+                  )}
                 </div>
 
                 {/* Godparents Card */}
@@ -3785,7 +4036,7 @@ export const CoupleAdminSection: React.FC = () => {
                             />
                           </div>
 
-                          <div className="sm:col-span-6">
+                          <div className="sm:col-span-5">
                             <label
                               htmlFor={`godparent-names-${idx}`}
                               className="block text-[11px] font-medium text-[#2c3e35]/70 mb-1"
@@ -3809,19 +4060,77 @@ export const CoupleAdminSection: React.FC = () => {
                             />
                           </div>
 
-                          <div className="sm:col-span-1 flex justify-end sm:pt-4">
+                          <div className="sm:col-span-2 flex items-center justify-end gap-1.5 sm:pt-4">
+                            <button
+                              type="button"
+                              onClick={() => void persistWeddingSection(`godparent-${idx}`, idx)}
+                              disabled={savingSectionKey === `godparent-${idx}`}
+                              title={`Guardar este padrino (${idx + 1})`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[#b89753]/40 bg-white hover:bg-[#f7f5f0] text-[#2c3e35] text-xs font-semibold cursor-pointer whitespace-nowrap"
+                            >
+                              {savingSectionKey === `godparent-${idx}` ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                              ) : (
+                                <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                              )}
+                              <span className="hidden sm:inline">Guardar</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleRemoveGodparentRow(idx)}
                               aria-label={`Eliminar padrino ${idx + 1}`}
-                              className="p-2 rounded-lg text-[#2c3e35]/55 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                              className="p-1.5 rounded-lg text-[#2c3e35]/55 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
+
+                          {savedSectionKey === `godparent-${idx}` && (
+                            <div className="sm:col-span-12">
+                              <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                Padrino #{idx + 1} guardado en la invitación
+                              </span>
+                            </div>
+                          )}
+
+                          {sectionSaveErrors[`godparent-${idx}`] && (
+                            <div className="sm:col-span-12">
+                              <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                                {sectionSaveErrors[`godparent-${idx}`]}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                    <button
+                      type="button"
+                      onClick={() => void persistWeddingSection('godparents')}
+                      disabled={savingSectionKey === 'godparents'}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer shadow-xs"
+                    >
+                      {savingSectionKey === 'godparents' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                      )}
+                      <span>Guardar Corte de Padrinos</span>
+                    </button>
+                    {savedSectionKey === 'godparents' && (
+                      <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Corte de Padrinos guardada en la invitación ({godparentsList.filter((g) => g.roleName.trim() && g.names.trim()).length} padrinos)
+                      </span>
+                    )}
+                  </div>
+                  {sectionSaveErrors.godparents && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                      {sectionSaveErrors.godparents}
+                    </p>
                   )}
                 </div>
 
@@ -4036,6 +4345,33 @@ export const CoupleAdminSection: React.FC = () => {
                       </div>
                     </div>
                   </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#b89753]/20">
+                    <button
+                      type="button"
+                      onClick={() => void persistWeddingSection('gifts')}
+                      disabled={savingSectionKey === 'gifts'}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer shadow-xs"
+                    >
+                      {savingSectionKey === 'gifts' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#b89753]" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5 text-[#b89753]" />
+                      )}
+                      <span>Guardar Mesa de Regalos &amp; Lluvia de Sobres</span>
+                    </button>
+                    {savedSectionKey === 'gifts' && (
+                      <span className="text-xs text-emerald-800 font-medium flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Datos de regalos y transferencias guardados
+                      </span>
+                    )}
+                  </div>
+                  {sectionSaveErrors.gifts && (
+                    <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                      {sectionSaveErrors.gifts}
+                    </p>
+                  )}
                 </div>
 
                 {weddingDetailsError && (
@@ -4783,7 +5119,7 @@ export const CoupleAdminSection: React.FC = () => {
               <div className="space-y-5">
                 {/* Google Drive Archive Banner */}
                 <div className="bg-white border border-[#b89753]/30 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#b89753] font-semibold">
                       <CloudUpload className="w-4 h-4 shrink-0" />
                       <span>Archivo en Carpeta de Google Drive</span>
@@ -4796,53 +5132,6 @@ export const CoupleAdminSection: React.FC = () => {
                     {driveToken && driveEmail && (
                       <p className="text-xs text-emerald-800">
                         Google conectado: {driveEmail}
-                      </p>
-                    )}
-                    {driveToken && driveFolderId && (
-                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        {isAutoDriveSyncRunning ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800 tabular-nums">
-                            <Clock className="w-3.5 h-3.5 text-emerald-700" />
-                            <span>
-                              Auto cada 10 min activo · Próximo en{' '}
-                              {autoSyncCountdownLabel || '10:00'}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[11px] font-medium text-[#2c3e35]/75">
-                            <Clock className="w-3.5 h-3.5 text-[#b89753]" />
-                            <span>
-                              Auto cada 10 min:{' '}
-                              {driveAutoSyncConfirmed
-                                ? 'pausado'
-                                : 'se activa al confirmar envío'}
-                            </span>
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={handleToggleAutoDriveSync}
-                          disabled={isSyncingDrive}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#b89753]/40 bg-white hover:bg-[#f7f5f0] text-[11px] font-semibold text-[#2c3e35] cursor-pointer disabled:opacity-50"
-                        >
-                          {isAutoDriveSyncRunning ? (
-                            <>
-                              <Pause className="w-3 h-3 text-[#b89753]" />
-                              <span>Pausar auto</span>
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-3 h-3 text-[#b89753]" />
-                              <span>Activar cada 10 min</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                    {lastAutoDriveSyncLabel && (
-                      <p className="text-[11px] text-[#2c3e35]/70 tabular-nums">
-                        {lastAutoDriveSyncLabel}
                       </p>
                     )}
                     {driveSyncProgress && (
@@ -4894,21 +5183,18 @@ export const CoupleAdminSection: React.FC = () => {
                       <>
                         <button
                           type="button"
-                          onClick={() => handleOpenConfirmDriveModal(true)}
+                          onClick={() => setConfirmDriveModalOpen(true)}
                           disabled={
                             isSyncingDrive ||
                             !driveFolderId ||
-                            (pendingDrivePhotos.length === 0 &&
-                              isAutoDriveSyncRunning)
+                            pendingDrivePhotos.length === 0
                           }
                           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
                         >
                           <CloudUpload className="w-3.5 h-3.5 text-[#b89753]" />
                           <span>
                             {pendingDrivePhotos.length === 0
-                              ? isAutoDriveSyncRunning
-                                ? 'Todo respaldado en Drive'
-                                : 'Activar respaldo cada 10 min'
+                              ? 'Todo respaldado en Drive'
                               : `Archivar ${pendingDrivePhotos.length} en Google Drive`}
                           </span>
                         </button>
@@ -4917,7 +5203,6 @@ export const CoupleAdminSection: React.FC = () => {
                           onClick={() => void refreshDriveSyncedFiles()}
                           disabled={isSyncingDrive}
                           aria-label="Actualizar estado de Google Drive"
-                          title="Comprobar fotos ya respaldadas en Drive"
                           className="p-2.5 rounded-full border border-[#b89753]/35 text-[#2c3e35] hover:bg-[#f7f5f0] cursor-pointer"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
@@ -5083,49 +5368,16 @@ export const CoupleAdminSection: React.FC = () => {
                         </h3>
                       </div>
                       <p className="text-sm text-[#2c3e35]/80 leading-relaxed">
-                        {pendingDrivePhotos.length > 0 ? (
-                          <>
-                            Se subirán{' '}
-                            <strong className="text-[#2c3e35]">
-                              {pendingDrivePhotos.length} fotografía(s)
-                            </strong>{' '}
-                            del álbum a tu carpeta compartida de Google Drive (
-                            <span className="font-mono text-xs">
-                              {driveFolderId}
-                            </span>
-                            ).
-                          </>
-                        ) : (
-                          <>
-                            Las fotografías actuales ya están en tu carpeta de
-                            Google Drive (
-                            <span className="font-mono text-xs">
-                              {driveFolderId}
-                            </span>
-                            ).
-                          </>
-                        )}
-                      </p>
-
-                      <label className="flex items-start gap-2.5 rounded-xl bg-[#f7f5f0] border border-[#b89753]/30 p-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={confirmEnableAutoEvery10Min}
-                          onChange={(e) =>
-                            setConfirmEnableAutoEvery10Min(e.target.checked)
-                          }
-                          className="mt-0.5 w-4 h-4 accent-[#2c3e35] rounded cursor-pointer shrink-0"
-                        />
-                        <span className="text-xs text-[#2c3e35]/85 leading-relaxed">
-                          <strong className="block text-[#2c3e35]">
-                            Guardar en automático cada 10 minutos
-                          </strong>
-                          Mientras mantengas Google conectado en este panel, las
-                          nuevas fotografías del Foto Party se subirán
-                          automáticamente cada 10 min sin duplicados.
+                        Se subirán{' '}
+                        <strong className="text-[#2c3e35]">
+                          {pendingDrivePhotos.length} fotografía(s)
+                        </strong>{' '}
+                        del álbum a tu carpeta compartida de Google Drive (
+                        <span className="font-mono text-xs">
+                          {driveFolderId}
                         </span>
-                      </label>
-
+                        ).
+                      </p>
                       <div className="flex items-center justify-end gap-2.5 pt-2">
                         <button
                           type="button"
@@ -5331,7 +5583,7 @@ export const CoupleAdminSection: React.FC = () => {
                     <p className="mt-1.5 text-xs text-[#2c3e35]/60">
                       Define cuántas mesas habrá en total en la recepción. Se
                       reflejarán de inmediato en la sección pública de
-                      &ldquo;Organización de Salón&rdquo; y en el reporte imprimible
+                      &ldquo;Organización del Salón&rdquo; y en el reporte imprimible
                       de carteles de mesa.
                     </p>
                   </div>
@@ -5373,7 +5625,7 @@ export const CoupleAdminSection: React.FC = () => {
                       className="text-sm text-[#2c3e35] cursor-pointer"
                     >
                       <span className="font-semibold block">
-                        Mostrar Buscador y Distribución de Mesas a los invitados
+                        Mostrar Organización del Salón (Encuentra tu lugar) a los invitados
                       </span>
                       <span className="text-xs text-[#2c3e35]/70">
                         Por defecto esta sección está oculta para el público y

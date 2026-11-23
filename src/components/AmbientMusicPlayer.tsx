@@ -5,6 +5,9 @@ import { WeddingConfigRecord } from '../data/weddingData';
 import { db } from '../firebase';
 import { assembleAudioBlobUrlFromChunks } from '../utils/audioStorage';
 
+// In-memory cache across component re-renders to ensure zero-delay playback
+const AUDIO_BLOB_CACHE = new Map<string, string>();
+
 // Gentle romantic ambient chord progression synthesized via Web Audio API
 // as fallback or when the couple chooses the built-in romantic melody.
 const PROGRESSION = [
@@ -22,8 +25,23 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   config,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string>('');
-  const loadedTokenRef = useRef<string>('');
+  const audioMode = config.customAudioMode ?? 'synth';
+  const audioUrl = config.customAudioUrl?.trim() ?? '';
+  const audioToken = config.customAudioUpdatedToken?.trim() ?? '';
+  const audioMime = config.customAudioMime?.trim() || 'audio/mpeg';
+  const audioTitle = config.customAudioTitle?.trim() || 'Música ambiental';
+
+  const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string>(() => {
+    if (audioMode === 'uploaded' && audioToken && AUDIO_BLOB_CACHE.has(audioToken)) {
+      return AUDIO_BLOB_CACHE.get(audioToken)!;
+    }
+    return '';
+  });
+
+  const loadedTokenRef = useRef<string>(
+    AUDIO_BLOB_CACHE.has(audioToken) ? audioToken : ''
+  );
+  const loadChunksPromiseRef = useRef<Promise<string> | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -32,35 +50,35 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   const stepRef = useRef(0);
   const isPlayingRef = useRef(false);
 
-  const audioMode = config.customAudioMode ?? 'synth';
-  const audioUrl = config.customAudioUrl?.trim() ?? '';
-  const audioToken = config.customAudioUpdatedToken?.trim() ?? '';
-  const audioMime = config.customAudioMime?.trim() || 'audio/mpeg';
-  const audioTitle = config.customAudioTitle?.trim() || 'Música ambiental';
-
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
   // Preload uploaded audio chunks into an in-memory Blob URL so playback can start
-  // synchronously inside the user's tap gesture on mobile browsers (iOS/Android).
+  // immediately when user interacts or opens the invitation envelope.
   useEffect(() => {
     let cancelled = false;
 
     if (audioMode !== 'uploaded' || !audioToken) {
       loadedTokenRef.current = '';
-      setUploadedBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
+      setUploadedBlobUrl('');
+      loadChunksPromiseRef.current = null;
       return;
     }
 
-    if (loadedTokenRef.current === audioToken) {
+    if (AUDIO_BLOB_CACHE.has(audioToken)) {
+      const cached = AUDIO_BLOB_CACHE.get(audioToken)!;
+      loadedTokenRef.current = audioToken;
+      setUploadedBlobUrl(cached);
+      loadChunksPromiseRef.current = Promise.resolve(cached);
       return;
     }
 
-    const loadChunks = async () => {
+    if (loadedTokenRef.current === audioToken && uploadedBlobUrl) {
+      return;
+    }
+
+    const loadChunks = async (): Promise<string> => {
       try {
         const snap = await getDocs(
           query(
@@ -68,9 +86,9 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
             where('trackToken', '==', audioToken)
           )
         );
-        if (cancelled) return;
+        if (cancelled || snap.empty) return '';
 
-        const chunks = snap.docs.map((d) => {
+        const rawChunks = snap.docs.map((d) => {
           const data = d.data();
           return {
             index: Number(data.index ?? 0),
@@ -79,43 +97,45 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
           };
         });
 
-        if (chunks.length === 0) return;
+        // Ensure chunks are strictly in sequential order
+        rawChunks.sort((a, b) => a.index - b.index);
 
-        const nextUrl = assembleAudioBlobUrlFromChunks(chunks, audioMime);
+        if (rawChunks.length === 0) return '';
+
+        const nextUrl = assembleAudioBlobUrlFromChunks(rawChunks, audioMime);
         if (cancelled) {
           URL.revokeObjectURL(nextUrl);
-          return;
+          return '';
         }
 
+        AUDIO_BLOB_CACHE.set(audioToken, nextUrl);
         loadedTokenRef.current = audioToken;
-        setUploadedBlobUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return nextUrl;
-        });
-      } catch {
-        // Keep synth fallback ready if network fetch fails
+        setUploadedBlobUrl(nextUrl);
+
+        // Preload HTML5 audio element
+        if (audioElRef.current) {
+          audioElRef.current.src = nextUrl;
+          audioElRef.current.load();
+        }
+
+        return nextUrl;
+      } catch (err) {
+        console.warn('Error loading custom audio chunks from Firestore:', err);
+        return '';
       }
     };
 
-    void loadChunks();
+    const task = loadChunks();
+    loadChunksPromiseRef.current = task;
 
     return () => {
       cancelled = true;
     };
-  }, [audioMode, audioToken, audioMime]);
-
-  useEffect(() => {
-    return () => {
-      setUploadedBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
-    };
-  }, []);
+  }, [audioMode, audioToken, audioMime, uploadedBlobUrl]);
 
   const resolvedCustomSrc =
     audioMode === 'uploaded'
-      ? uploadedBlobUrl
+      ? uploadedBlobUrl || (audioToken ? AUDIO_BLOB_CACHE.get(audioToken) || '' : '')
       : audioMode === 'url' && audioUrl.startsWith('https://')
         ? audioUrl
         : '';
@@ -214,19 +234,43 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   };
 
   const startPlayback = async () => {
-    if (resolvedCustomSrc && audioElRef.current) {
+    let targetSrc = resolvedCustomSrc;
+
+    // If custom audio was configured as uploaded, wait briefly for in-flight download:
+    if (audioMode === 'uploaded' && !targetSrc && loadChunksPromiseRef.current) {
+      if (audioElRef.current) {
+        try {
+          audioElRef.current.load();
+        } catch {}
+      }
+      try {
+        const resolved = await Promise.race([
+          loadChunksPromiseRef.current,
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 4000)
+          ),
+        ]);
+        if (resolved) {
+          targetSrc = resolved;
+        }
+      } catch {
+        // Fall back to synth on timeout
+      }
+    }
+
+    if (targetSrc && audioElRef.current) {
       stopSynth();
       try {
         const el = audioElRef.current;
-        if (el.src !== resolvedCustomSrc) {
-          el.src = resolvedCustomSrc;
+        if (el.src !== targetSrc) {
+          el.src = targetSrc;
         }
         el.volume = 0.85;
         await el.play();
         setIsPlaying(true);
         return;
-      } catch {
-        // Fall back to built-in synth if custom audio playback fails
+      } catch (err) {
+        console.warn('HTML5 audio play rejected, using fallback synth:', err);
       }
     }
 
@@ -248,22 +292,23 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     }
   };
 
-  // Switch seamlessly if admin changes music mode/file while user is already playing
+  // Seamlessly transition if the custom audio finishes loading while user is already playing
   useEffect(() => {
     if (!isPlayingRef.current) return;
-    if (audioMode === 'synth') {
-      stopHtmlAudio();
-      void startSynth();
-    } else if (resolvedCustomSrc && audioElRef.current) {
+
+    if (audioMode === 'uploaded' && resolvedCustomSrc && audioElRef.current) {
       stopSynth();
       const el = audioElRef.current;
       if (el.src !== resolvedCustomSrc) {
         el.src = resolvedCustomSrc;
       }
       el.volume = 0.85;
-      void el.play().catch(() => {
+      el.play().catch(() => {
         void startSynth();
       });
+    } else if (audioMode === 'synth') {
+      stopHtmlAudio();
+      void startSynth();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioMode, resolvedCustomSrc]);
