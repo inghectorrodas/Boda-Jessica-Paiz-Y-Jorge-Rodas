@@ -1200,7 +1200,7 @@ export const RsvpAndTablesSection: React.FC = () => {
                 </span>
               </h2>
               <p className="mt-3 text-sm sm:text-base text-[#2c3e35]/75 leading-relaxed max-w-2xl mx-auto">
-                ¡Queremos que disfrutes cada momento de este día tan especial! Escribe tu apellido en el buscador para localizar la mesa que te hemos asignado. Las familias se han organizado por afinidad de apellidos para que puedan compartir esta celebración juntos.
+                ¡Queremos que disfrutes cada momento de este día tan especial! Escribe tu apellido en el buscador para localizar la mesa que te hemos asignado.
               </p>
             </div>
 
@@ -1276,12 +1276,12 @@ export const RsvpAndTablesSection: React.FC = () => {
                   <Heart className="w-3.5 h-3.5" />
                   <span>Mesa Principal de los Novios</span>
                 </div>
-                <p className="mt-1.5 font-['Great_Vibes'] text-3xl sm:text-4xl font-normal text-[#f7f5f0]">
-                  Jessica Guadalupe{' '}
-                  <span className="font-serif italic text-[#b89753] text-2xl sm:text-3xl">
+                <p className="mt-1.5 font-['Great_Vibes'] text-3xl sm:text-4xl font-normal text-[#f7f5f0] text-center leading-tight">
+                  Jessica Paiz
+                  <span className="block font-serif italic text-[#b89753] text-2xl sm:text-3xl my-0.5">
                     &amp;
-                  </span>{' '}
-                  Jorge Luis
+                  </span>
+                  Jorge Rodas
                 </p>
               </div>
             </div>
@@ -1309,9 +1309,11 @@ export const RsvpAndTablesSection: React.FC = () => {
                         <h3 className="font-serif text-2xl font-semibold text-[#2c3e35]">
                           Mesa {table.tableNumber}
                         </h3>
-                        <p className="text-xs text-[#b89753] font-medium">
-                          {table.zoneLabel}
-                        </p>
+                        {isCoupleOrAdmin && (
+                          <p className="text-xs text-[#b89753] font-medium">
+                            {table.zoneLabel}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right tabular-nums">
                         <span className="text-sm font-semibold text-[#2c3e35]">
@@ -1347,16 +1349,20 @@ export const RsvpAndTablesSection: React.FC = () => {
                       })}
                     </div>
 
-                    <p className="text-xs text-[#2c3e35]/60 mb-3">
-                      {table.proximityNote}
-                    </p>
+                    {isCoupleOrAdmin && table.proximityNote && (
+                      <p className="text-xs text-[#2c3e35]/60 mb-3">
+                        {table.proximityNote}
+                      </p>
+                    )}
 
                     {/* Grouped Families List */}
                     <ul className="space-y-2.5 pt-2 border-t border-[#b89753]/10">
                       {table.parties.length === 0 ? (
-                        <li className="text-xs text-[#2c3e35]/50 italic">
-                          Disponible para nuevos invitados
-                        </li>
+                        isCoupleOrAdmin ? (
+                          <li className="text-xs text-[#2c3e35]/50 italic">
+                            Disponible para nuevos invitados
+                          </li>
+                        ) : null
                       ) : (
                         table.parties.map((party) => {
                           const isPartyMatch =

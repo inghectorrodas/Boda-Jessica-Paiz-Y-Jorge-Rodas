@@ -9,7 +9,7 @@ export function buildGoogleCalendarUrlForEvent(
 ): string {
   const tableText =
     assignedTable !== null ? ` (Mesa #${assignedTable})` : '';
-  const title = `${event.title} - Boda Jessica & Jorge Luis${tableText}`;
+  const title = `${event.title} - Boda Jessica & Jorge${tableText}`;
   const formatTime = (iso: string) =>
     iso.replace(/[-:]/g, '').split('.')[0] + 'Z';
   const start = formatTime(event.icsStart);

@@ -179,12 +179,21 @@ export interface WeddingConfigRecord {
 
 export const WEDDING_ALBUM_UNLOCK_ISO = '2027-07-10T00:00:00';
 
-export function isWeddingDayReached(weddingDateISO?: string): boolean {
-  const safeDate =
+export function isWeddingDayReached(
+  weddingDateISO?: string,
+  ceremonyTime?: string
+): boolean {
+  const dateStr =
     weddingDateISO && /^\d{4}-\d{2}-\d{2}$/.test(weddingDateISO)
-      ? `${weddingDateISO}T00:00:00`
-      : WEDDING_ALBUM_UNLOCK_ISO;
-  return Date.now() >= new Date(safeDate).getTime();
+      ? weddingDateISO
+      : '2027-07-10';
+  const timeStr =
+    ceremonyTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(ceremonyTime)
+      ? ceremonyTime
+      : '16:00';
+  const ceremonyMs = new Date(`${dateStr}T${timeStr}:00`).getTime();
+  const unlockMs = ceremonyMs - 30 * 60 * 1000; // 30 minutes before ceremony
+  return Date.now() >= unlockMs;
 }
 
 export const DEFAULT_GODPARENTS_LIST: GodparentRole[] = [
@@ -222,7 +231,7 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   receptionAddress: 'Zona Escalón, San Salvador, El Salvador',
   receptionMapUrl: 'https://maps.google.com/?q=Colonia+Escalon+San+Salvador',
   brideParents: 'Sra. Guadalupe Mendoza & Sr. Guadalupe Herrera',
-  groomParents: 'Sr. Jorge Rodas Morales & Sra. Carmen Benítez de Rodas',
+  groomParents: 'Sr. Jorge Rodas Morales & Sra. Morena del Carmen Benítez de Rodas (Desde el Cielo)',
   godparentsList: DEFAULT_GODPARENTS_LIST,
   giftEnvelopeNote:
     'Tendremos un cofre dispuesto en la entrada del Salón de Eventos Elegance para recibir sus sobres y buenos deseos.',
@@ -292,7 +301,7 @@ export const COUPLE_INFO = {
     'Hay momentos en la vida que son inolvidables, compartirlos los hace perfectos.',
   parents: {
     bride: 'Sra. Guadalupe Mendoza & Sr. Guadalupe Herrera',
-    groom: 'Sr. Jorge Rodas Morales & Sra. Carmen Benítez de Rodas',
+    groom: 'Sr. Jorge Rodas Morales & Sra. Morena del Carmen Benítez de Rodas (Desde el Cielo)',
   },
   godparentsList: DEFAULT_GODPARENTS_LIST,
 };

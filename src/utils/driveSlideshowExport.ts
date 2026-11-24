@@ -315,7 +315,7 @@ export function generateStandaloneSlideshowHtml({
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Presentación de Fotos · Jessica Guadalupe & Jorge Luis</title>
+  <title>Presentación de Fotos · Jessica Paiz & Jorge Rodas</title>
   <style>
     :root {
       --bg: #141d18;
@@ -710,7 +710,7 @@ export function generateStandaloneSlideshowHtml({
     <header class="hud hud-top">
       <div>
         <div id="folderEyebrow" class="eyebrow">Carpeta Google Drive · ${folderName || 'BODA J&J'}</div>
-        <h1 class="couple-title">Jessica Guadalupe &amp; Jorge Luis</h1>
+        <h1 class="couple-title">Jessica Paiz &amp; Jorge Rodas</h1>
       </div>
 
       <div class="controls">

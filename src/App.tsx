@@ -125,8 +125,11 @@ export default function App() {
 
   const isWeddingDayActive = React.useMemo(() => {
     void nowTick;
-    return isWeddingDayReached(weddingConfig.weddingDateISO);
-  }, [nowTick, weddingConfig.weddingDateISO]);
+    return isWeddingDayReached(
+      weddingConfig.weddingDateISO,
+      weddingConfig.ceremonyTime
+    );
+  }, [nowTick, weddingConfig.weddingDateISO, weddingConfig.ceremonyTime]);
 
   const albumEnabledEarly = Boolean(weddingConfig.albumEnabledEarly);
   const tablesVisibleToGuests = Boolean(weddingConfig.tablesVisibleToGuests);
@@ -365,6 +368,9 @@ export default function App() {
               </p>
               <p className="font-serif text-xl sm:text-2xl font-medium text-[#2c3e35]">
                 {weddingConfig.groomParents || COUPLE_INFO.parents.groom}
+              </p>
+              <p className="mt-2 font-serif italic text-xs text-[#2c3e35]/70 max-w-sm mx-auto">
+                En memoria de una madre cuyo amor y recuerdo vivirán por siempre en nuestros corazones.
               </p>
             </div>
           </div>
@@ -618,13 +624,13 @@ export default function App() {
       <footer className="relative overflow-hidden py-14 px-6 text-center bg-white border-t border-[#b89753]/25">
         <div className="relative z-10">
           <BotanicalDivider className="mb-6" />
-          <p className="font-['Great_Vibes'] text-4xl sm:text-5xl font-normal text-[#b89753]">
-            Jessica Paiz{' '}
-            <span className="font-serif italic text-3xl sm:text-4xl text-[#7e919e]">
+          <div className="font-['Great_Vibes'] text-4xl sm:text-5xl font-normal text-[#b89753] leading-tight">
+            <span>Jessica Paiz</span>
+            <span className="block font-serif italic text-3xl sm:text-4xl text-[#7e919e] my-0.5">
               &amp;
-            </span>{' '}
-            Jorge Rodas
-          </p>
+            </span>
+            <span>Jorge Rodas</span>
+          </div>
           <p className="mt-2 text-xs uppercase tracking-[0.25em] text-[#b89753] font-semibold">
             {weddingDateDots}
           </p>

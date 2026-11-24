@@ -696,9 +696,13 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
             <p className="font-serif italic text-base sm:text-lg text-[#2c3e35]/90">
               ¡Cada fotografía contará una parte de nuestra historia!
             </p>
-            <p className="mt-2 font-['Great_Vibes'] text-3xl sm:text-4xl text-[#b89753] font-normal">
-              Jessica &amp; Jorge
-            </p>
+            <div className="mt-2 font-['Great_Vibes'] text-3xl sm:text-4xl text-[#b89753] font-normal leading-tight">
+              <span>Jessica Paiz</span>
+              <span className="block font-serif italic text-2xl sm:text-3xl text-[#7e919e] my-0.5">
+                &amp;
+              </span>
+              <span>Jorge Rodas</span>
+            </div>
             <p className="text-[11px] uppercase tracking-[0.25em] text-[#2c3e35]/60 font-semibold mt-1">
               NUESTRO DÍA ESPECIAL
             </p>

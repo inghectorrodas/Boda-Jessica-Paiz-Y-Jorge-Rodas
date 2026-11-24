@@ -60,7 +60,7 @@ export function exportWeddingReportPdf(
   doc.setTextColor(252, 251, 249);
   doc.setFont('times', 'bold');
   doc.setFontSize(19);
-  doc.text('Boda Jessica Guadalupe & Jorge Luis Rodas Benitez', 14, 20);
+  doc.text('Boda Jessica Paiz & Jorge Rodas', 14, 20);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -329,14 +329,14 @@ export function exportWeddingReportPdf(
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `Jessica Guadalupe & Jorge Luis · ${reportDateLabel}  —  Página ${i} de ${totalPages}`,
+      `Jessica Paiz & Jorge Rodas · ${reportDateLabel}  —  Página ${i} de ${totalPages}`,
       pageWidth / 2,
       doc.internal.pageSize.getHeight() - 8,
       { align: 'center' }
     );
   }
 
-  doc.save('Reporte_Invitados_Boda_Jessica_y_Jorge_Luis.pdf');
+  doc.save('Reporte_Invitados_Boda_Jessica_y_Jorge.pdf');
 }
 
 export function exportTablePlaceCardsPdf(
@@ -482,7 +482,7 @@ export function exportTablePlaceCardsPdf(
     doc.setTextColor(252, 251, 249);
     doc.setFont('times', 'bold');
     doc.setFontSize(18.5);
-    doc.text('Jessica Guadalupe & Jorge Luis', pageWidth / 2, 30.5, {
+    doc.text('Jessica Paiz & Jorge Rodas', pageWidth / 2, 30.5, {
       align: 'center',
     });
 
@@ -613,14 +613,14 @@ export function exportTablePlaceCardsPdf(
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(184, 151, 83);
     doc.text(
-      `Mesa ${tableNum} de ${safeTotalTables} · Jessica Guadalupe & Jorge Luis · ${reportDateLabel}`,
+      `Mesa ${tableNum} de ${safeTotalTables} · Jessica Paiz & Jorge Rodas · ${reportDateLabel}`,
       pageWidth / 2,
       pageHeight - 16,
       { align: 'center' }
     );
   }
 
-  doc.save('Carteles_Mesas_Boda_Jessica_y_Jorge_Luis.pdf');
+  doc.save('Carteles_Mesas_Boda_Jessica_y_Jorge.pdf');
 }
 
 interface SeatAssignmentRange {
@@ -694,7 +694,7 @@ export function exportConfirmedGuestsBySurnamePdf(
   doc.setTextColor(252, 251, 249);
   doc.setFont('times', 'bold');
   doc.setFontSize(18.5);
-  doc.text('Boda Jessica Guadalupe & Jorge Luis Rodas Benitez', 14, 20);
+  doc.text('Boda Jessica Paiz & Jorge Rodas', 14, 20);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.8);
@@ -977,5 +977,5 @@ export function exportConfirmedGuestsBySurnamePdf(
     );
   }
 
-  doc.save('Reporte_Confirmados_Por_Apellidos_Boda_Jessica_y_Jorge_Luis.pdf');
+  doc.save('Reporte_Confirmados_Por_Apellidos_Boda_Jessica_y_Jorge.pdf');
 }

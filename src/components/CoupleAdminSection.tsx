@@ -104,6 +104,7 @@ import {
   normalizeText,
   resolveLoginIdentifier,
   RsvpRecord,
+  TABLE_CAPACITY,
   WeddingPhotoRecord,
 } from '../data/weddingData';
 import {
@@ -151,6 +152,7 @@ interface NumericInputProps {
   onBlurCommit?: (nextValue: number) => void;
   className?: string;
   ariaLabel?: string;
+  disabled?: boolean;
 }
 
 const NumericInput: React.FC<NumericInputProps> = ({
@@ -163,6 +165,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
   onBlurCommit,
   className,
   ariaLabel,
+  disabled,
 }) => {
   const [text, setText] = useState<string>(() => String(value));
   const isFocusedRef = useRef(false);
@@ -212,6 +215,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
       pattern="[0-9]*"
       aria-label={ariaLabel}
       value={text}
+      disabled={disabled}
       onFocus={handleFocus}
       onChange={handleChange}
       onBlur={handleBlur}
@@ -306,6 +310,9 @@ export const CoupleAdminSection: React.FC = () => {
   const [quotaMaxKids, setQuotaMaxKids] = useState(0);
   const [quotaMaxBabies, setQuotaMaxBabies] = useState(0);
   const [quotaAssignedTable, setQuotaAssignedTable] = useState(0);
+  const [assignmentMode, setAssignmentMode] = useState<
+    'auto_novio' | 'auto_novia' | 'manual'
+  >('auto_novio');
   const [quotaGuestGroup, setQuotaGuestGroup] = useState<
     GuestRelationGroup | ''
   >('');
@@ -1165,6 +1172,32 @@ export const CoupleAdminSection: React.FC = () => {
     };
   }, [guestQuotas]);
 
+  const adminTablesSummary = useMemo(() => {
+    const tableMap = new Map<
+      number,
+      { tableNumber: number; occupied: number; capacity: number }
+    >();
+    for (let i = 1; i <= totalTables; i++) {
+      tableMap.set(i, {
+        tableNumber: i,
+        occupied: 0,
+        capacity: TABLE_CAPACITY,
+      });
+    }
+    for (const q of guestQuotas) {
+      if (q.assignedTable > 0) {
+        const t = tableMap.get(q.assignedTable) || {
+          tableNumber: q.assignedTable,
+          occupied: 0,
+          capacity: TABLE_CAPACITY,
+        };
+        t.occupied += q.maxAdults + q.maxKids;
+        tableMap.set(q.assignedTable, t);
+      }
+    }
+    return Array.from(tableMap.values());
+  }, [guestQuotas, totalTables]);
+
   const filteredQuotas = useMemo(() => {
     const q = normalizeText(quotaSearch);
     return guestQuotas.filter((item) => {
@@ -1188,7 +1221,8 @@ export const CoupleAdminSection: React.FC = () => {
     setQuotaMaxKids(0);
     setQuotaMaxBabies(0);
     setQuotaAssignedTable(0);
-    setQuotaGuestGroup('');
+    setAssignmentMode('auto_novio');
+    setQuotaGuestGroup('familiar_novio');
     setQuotaNotes('');
     setQuotaFormError('');
   };
@@ -1201,6 +1235,15 @@ export const CoupleAdminSection: React.FC = () => {
     setQuotaMaxKids(item.maxKids);
     setQuotaMaxBabies(item.maxBabies);
     setQuotaAssignedTable(item.assignedTable);
+    if (item.assignedTable > 0) {
+      setAssignmentMode('manual');
+    } else {
+      setAssignmentMode(
+        item.guestGroup === 'familiar_novia' || item.guestGroup === 'amigo_novia'
+          ? 'auto_novia'
+          : 'auto_novio'
+      );
+    }
     setQuotaGuestGroup(item.guestGroup);
     setQuotaNotes(item.notes);
     setQuotaFormError('');
@@ -1230,10 +1273,10 @@ export const CoupleAdminSection: React.FC = () => {
     const safeAdults = Math.min(10, Math.max(1, Number(quotaMaxAdults) || 1));
     const safeKids = Math.min(8, Math.max(0, Number(quotaMaxKids) || 0));
     const safeBabies = Math.min(5, Math.max(0, Number(quotaMaxBabies) || 0));
-    const safeTable = Math.min(
-      100,
-      Math.max(0, Number(quotaAssignedTable) || 0)
-    );
+    const safeTable =
+      assignmentMode === 'manual'
+        ? Math.min(100, Math.max(1, Number(quotaAssignedTable) || 1))
+        : 0;
     const cleanNotes = quotaNotes.trim().slice(0, 300);
 
     setSavingQuota(true);
@@ -4564,7 +4607,7 @@ export const CoupleAdminSection: React.FC = () => {
                   )}
 
                   <form onSubmit={handleSaveQuota} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div>
                         <label
                           htmlFor="quotaGuestNameInput"
@@ -4629,6 +4672,37 @@ export const CoupleAdminSection: React.FC = () => {
                           ))}
                         </select>
                       </div>
+
+                      <div>
+                        <label
+                          htmlFor="assignmentStrategyInput"
+                          className="block text-xs font-medium text-[#2c3e35] mb-1"
+                        >
+                          Estrategia de Asignación
+                        </label>
+                        <select
+                          id="assignmentStrategyInput"
+                          value={assignmentMode}
+                          onChange={(e) => {
+                            const mode = e.target.value as 'auto_novio' | 'auto_novia' | 'manual';
+                            setAssignmentMode(mode);
+                            if (mode === 'auto_novio') {
+                              setQuotaGuestGroup('familiar_novio');
+                              setQuotaAssignedTable(0);
+                            } else if (mode === 'auto_novia') {
+                              setQuotaGuestGroup('familiar_novia');
+                              setQuotaAssignedTable(0);
+                            } else {
+                              if (quotaAssignedTable === 0) setQuotaAssignedTable(1);
+                            }
+                          }}
+                          className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                        >
+                          <option value="auto_novio">Automática (Novio)</option>
+                          <option value="auto_novia">Automática (Novia)</option>
+                          <option value="manual">Manual (Elegir Mesa)</option>
+                        </select>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
@@ -4691,17 +4765,38 @@ export const CoupleAdminSection: React.FC = () => {
                           htmlFor="quotaTableInput"
                           className="block text-xs font-medium text-[#2c3e35] mb-1"
                         >
-                          Mesa (0 = Auto)
+                          {assignmentMode === 'manual'
+                            ? 'Seleccionar Mesa Disponible'
+                            : 'Mesa (Auto)'}
                         </label>
-                        <NumericInput
-                          id="quotaTableInput"
-                          min={0}
-                          max={100}
-                          defaultValue={0}
-                          value={quotaAssignedTable}
-                          onCommit={setQuotaAssignedTable}
-                          className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] tabular-nums focus:outline-none focus:border-[#b89753]"
-                        />
+                        {assignmentMode === 'manual' ? (
+                          <select
+                            id="quotaTableInput"
+                            value={quotaAssignedTable}
+                            onChange={(e) =>
+                              setQuotaAssignedTable(Number(e.target.value))
+                            }
+                            className="w-full h-10 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl px-3 text-sm text-[#2c3e35] focus:outline-none focus:border-[#b89753]"
+                          >
+                            <option value={0}>-- Selecciona una mesa --</option>
+                            {adminTablesSummary.map((t) => {
+                              const remaining = Math.max(
+                                0,
+                                t.capacity - t.occupied
+                              );
+                              return (
+                                <option key={t.tableNumber} value={t.tableNumber}>
+                                  Mesa #{t.tableNumber} ({t.occupied}/{t.capacity}{' '}
+                                  ocupados · {remaining} libres)
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : (
+                          <div className="w-full h-10 bg-[#f7f5f0] border border-[#b89753]/30 rounded-xl px-3 flex items-center text-xs text-[#2c3e35]/70 font-medium">
+                            Asignación automática por afinidad
+                          </div>
+                        )}
                       </div>
 
                       <div className="col-span-2 sm:col-span-1 rounded-xl bg-[#f7f5f0] border border-[#b89753]/25 h-10 px-3 flex items-center justify-center gap-1.5 text-xs font-semibold text-[#2c3e35] tabular-nums">
