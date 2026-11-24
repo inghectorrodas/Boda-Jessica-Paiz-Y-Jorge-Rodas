@@ -28,6 +28,8 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  getDoc,
+  limit,
   where,
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -37,6 +39,7 @@ import {
   DEFAULT_WEDDING_CONFIG,
   formatWeddingReportDateLabel,
   generateSafeId,
+  getStoredWeddingConfig,
   isAuthorizedCoupleEmail,
   mergeWeddingConfig,
   WeddingConfigRecord,
@@ -73,8 +76,8 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
   isWeddingDayActive,
 }) => {
   const [photos, setPhotos] = useState<WeddingPhotoRecord[]>([]);
-  const [config, setConfig] = useState<WeddingConfigRecord>(
-    DEFAULT_WEDDING_CONFIG
+  const [config, setConfig] = useState<WeddingConfigRecord>(() =>
+    getStoredWeddingConfig()
   );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -82,14 +85,37 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setCurrentUser(u);
     });
-    return () => unsubAuth();
+
+    const fetchConfig = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'wedding_settings', 'main'));
+        if (snap.exists()) {
+          setConfig(mergeWeddingConfig(snap.data()));
+        }
+      } catch (err) {
+        setConfig(getStoredWeddingConfig());
+      }
+    };
+    void fetchConfig();
+
+    const handleConfigUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setConfig(mergeWeddingConfig(detail));
+      }
+    };
+    window.addEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
+
+    return () => {
+      unsubAuth();
+      window.removeEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
+    };
   }, []);
 
   const isCoupleOrAdmin = Boolean(
     currentUser && isAuthorizedCoupleEmail(currentUser.email)
   );
 
-  // Upload form state (Modo Paparazzi: hasta 10 fotos por publicación)
   const MAX_PHOTOS_PER_POST = 10;
   const [guestName, setGuestName] = useState(() =>
     typeof window !== 'undefined'
@@ -108,7 +134,6 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
   const [uploadWarning, setUploadWarning] = useState('');
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState('');
 
-  // Lightbox, QR, Carousel & Foto Party state
   const [selectedPhoto, setSelectedPhoto] = useState<WeddingPhotoRecord | null>(
     null
   );
@@ -148,28 +173,6 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
     config.googlePhotosUrl ||
     DEFAULT_DRIVE_FOLDER_URL;
   const effectiveScriptUrl = customScriptUrl || config.appsScriptUrl;
-
-  useEffect(() => {
-    const unsubConfig = onSnapshot(
-      doc(db, 'wedding_settings', 'main'),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          setConfig(mergeWeddingConfig(docSnap.data()));
-        }
-      },
-      (error) => {
-        handleFirestoreError(
-          error,
-          OperationType.GET,
-          'wedding_settings/main'
-        );
-      }
-    );
-
-    return () => {
-      unsubConfig();
-    };
-  }, []);
 
   const loadDriveSlides = useCallback(
     async (overrideFolder?: string, overrideScript?: string) => {
@@ -367,7 +370,8 @@ export const PhotoAlbumSection: React.FC<PhotoAlbumSectionProps> = ({
 
     const photosQuery = query(
       collection(db, 'wedding_photos'),
-      where('visible', '==', true)
+      where('visible', '==', true),
+      limit(50)
     );
 
     const unsubPhotos = onSnapshot(

@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import {
+  doc,
+  getDocFromServer,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -12,7 +18,15 @@ export const GOOGLE_DRIVE_SCOPES = [
 export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 export const FIREBASE_DATABASE_ID = firebaseConfig.firestoreDatabaseId;
 
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(
+  app,
+  {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  },
+  firebaseConfig.firestoreDatabaseId
+);
 export const auth = getAuth(app);
 export const adminGoogleProvider = new GoogleAuthProvider();
 adminGoogleProvider.setCustomParameters({ prompt: 'select_account' });

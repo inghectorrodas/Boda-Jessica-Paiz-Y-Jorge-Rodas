@@ -7,7 +7,7 @@ import {
   X,
 } from 'lucide-react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { AmbientMusicPlayer } from './components/AmbientMusicPlayer';
 import {
   BotanicalDivider,
@@ -33,6 +33,7 @@ import {
   formatWeddingDateDots,
   formatWeddingDateUpper,
   formatWeddingDayName,
+  getStoredWeddingConfig,
   HeroPhotoRecord,
   isAuthorizedCoupleEmail,
   isWeddingDayReached,
@@ -45,8 +46,8 @@ import { auth, db } from './firebase';
 export default function App() {
   const [isGiftModalOpen, setIsGiftModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [weddingConfig, setWeddingConfig] = useState<WeddingConfigRecord>(
-    DEFAULT_WEDDING_CONFIG
+  const [weddingConfig, setWeddingConfig] = useState<WeddingConfigRecord>(() =>
+    getStoredWeddingConfig()
   );
   const [heroPhotos, setHeroPhotos] = useState<HeroPhotoRecord[]>([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -67,22 +68,32 @@ export default function App() {
       setCurrentUser(u);
     });
 
-    const unsubConfig = onSnapshot(
-      doc(db, 'wedding_settings', 'main'),
-      (snap) => {
+    // Single-fetch static wedding config with fallback to localStorage
+    const fetchConfig = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'wedding_settings', 'main'));
         if (snap.exists()) {
           setWeddingConfig(mergeWeddingConfig(snap.data()));
         }
-      },
-      () => {
-        // Fallback to default config if config read fails
+      } catch (err) {
+        setWeddingConfig(getStoredWeddingConfig());
       }
-    );
+    };
+    void fetchConfig();
+
+    const handleConfigUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setWeddingConfig(mergeWeddingConfig(detail));
+      }
+    };
+    window.addEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
 
     const unsubHeroPhotos = onSnapshot(
       query(
         collection(db, 'wedding_hero_photos'),
-        where('active', '==', true)
+        where('active', '==', true),
+        limit(30)
       ),
       (snap) => {
         const list: HeroPhotoRecord[] = snap.docs
@@ -101,15 +112,13 @@ export default function App() {
           .sort((a, b) => a.sortOrder - b.sortOrder);
         setHeroPhotos(list);
       },
-      () => {
-        // Fallback to default hero photos on read error
-      }
+      () => {}
     );
 
     return () => {
       window.clearInterval(timer);
       unsubAuth();
-      unsubConfig();
+      window.removeEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
       unsubHeroPhotos();
     };
   }, []);

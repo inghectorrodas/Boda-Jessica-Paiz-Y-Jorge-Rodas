@@ -98,6 +98,8 @@ import {
   isAuthorizedCoupleEmail,
   isValidPhoneKey,
   mergeWeddingConfig,
+  saveStoredWeddingConfig,
+  saveStoredGuestQuotas,
   normalizePhoneKey,
   normalizeText,
   resolveLoginIdentifier,
@@ -431,10 +433,12 @@ export const CoupleAdminSection: React.FC = () => {
   const [heroMediaError, setHeroMediaError] = useState('');
   const [heroMediaSuccess, setHeroMediaSuccess] = useState('');
 
-  const [customAudioMode, setCustomAudioMode] = useState<CustomAudioMode>('synth');
-  const [customAudioUrl, setCustomAudioUrl] = useState('');
+  const [customAudioMode, setCustomAudioMode] = useState<CustomAudioMode>('url');
+  const [customAudioUrl, setCustomAudioUrl] = useState(
+    DEFAULT_WEDDING_CONFIG.customAudioUrl ?? ''
+  );
   const [customAudioTitle, setCustomAudioTitle] = useState(
-    DEFAULT_WEDDING_CONFIG.customAudioTitle ?? 'Melodía Ambiental Romántica'
+    DEFAULT_WEDDING_CONFIG.customAudioTitle ?? 'POR TI VOLARE - Andrea Bocelli / Arcano'
   );
   const [customAudioMime, setCustomAudioMime] = useState('audio/mpeg');
   const [customAudioChunkCount, setCustomAudioChunkCount] = useState(0);
@@ -709,12 +713,14 @@ export const CoupleAdminSection: React.FC = () => {
           setGiftQrValue(merged.giftQrValue ?? '');
           setGiftQrImage(merged.giftQrImage ?? '');
           setHideDefaultHeroPhotos(Boolean(merged.hideDefaultHeroPhotos));
-          setCustomAudioMode(merged.customAudioMode ?? 'synth');
-          setCustomAudioUrl(merged.customAudioUrl ?? '');
+          setCustomAudioMode(merged.customAudioMode ?? 'url');
+          setCustomAudioUrl(
+            merged.customAudioUrl || DEFAULT_WEDDING_CONFIG.customAudioUrl || ''
+          );
           setCustomAudioTitle(
-            merged.customAudioTitle ??
-              DEFAULT_WEDDING_CONFIG.customAudioTitle ??
-              'Melodía Ambiental Romántica'
+            merged.customAudioTitle ||
+              DEFAULT_WEDDING_CONFIG.customAudioTitle ||
+              'POR TI VOLARE - Andrea Bocelli / Arcano'
           );
           setCustomAudioMime(merged.customAudioMime ?? 'audio/mpeg');
           setCustomAudioChunkCount(merged.customAudioChunkCount ?? 0);

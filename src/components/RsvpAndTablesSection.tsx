@@ -19,6 +19,8 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -47,6 +49,7 @@ import {
   isAuthorizedCoupleEmail,
   isValidPhoneKey,
   mergeWeddingConfig,
+  getStoredWeddingConfig,
   normalizePhoneKey,
   normalizeText,
   openCalendarDirect,
@@ -116,15 +119,15 @@ export const RsvpAndTablesSection: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'seating_entries'),
-      orderBy('createdAt', 'asc')
-    );
-
-    const unsubSeating = onSnapshot(
-      q,
-      (snapshot) => {
-        const loaded: GuestParty[] = snapshot.docs.map((docSnap) => {
+    const fetchSeatingAndConfig = async () => {
+      try {
+        const q = query(
+          collection(db, 'seating_entries'),
+          orderBy('createdAt', 'asc'),
+          limit(100)
+        );
+        const snap = await getDocs(q);
+        const loaded: GuestParty[] = snap.docs.map((docSnap) => {
           const data = docSnap.data();
           return {
             id: docSnap.id,
@@ -140,32 +143,39 @@ export const RsvpAndTablesSection: React.FC = () => {
           };
         });
         setLiveSeatingParties(loaded);
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'seating_entries');
+      } catch (err) {
+        console.warn('Seating entries fetch skipped / quota exceeded:', err);
       }
-    );
+
+      try {
+        const configSnap = await getDoc(doc(db, 'wedding_settings', 'main'));
+        if (configSnap.exists()) {
+          setWeddingConfig(mergeWeddingConfig(configSnap.data()));
+        } else {
+          setWeddingConfig(getStoredWeddingConfig());
+        }
+      } catch (err) {
+        setWeddingConfig(getStoredWeddingConfig());
+      }
+    };
+
+    void fetchSeatingAndConfig();
 
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setCurrentUser(u);
     });
 
-    const unsubConfig = onSnapshot(
-      doc(db, 'wedding_settings', 'main'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          setWeddingConfig(mergeWeddingConfig(snapshot.data()));
-        }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.GET, 'wedding_settings/main');
+    const handleConfigUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setWeddingConfig(mergeWeddingConfig(detail));
       }
-    );
+    };
+    window.addEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
 
     return () => {
       unsubAuth();
-      unsubSeating();
-      unsubConfig();
+      window.removeEventListener('wedding:config-updated', handleConfigUpdate as EventListener);
     };
   }, []);
 

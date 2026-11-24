@@ -164,6 +164,9 @@ export interface WeddingConfigRecord {
   giftAccountNumber?: string;
   giftQrValue?: string;
   giftQrImage?: string;
+  giftClabeOrId?: string;
+  giftBizPhone?: string;
+  giftAppAlias?: string;
   hideDefaultHeroPhotos?: boolean;
   customAudioMode?: CustomAudioMode;
   customAudioUrl?: string;
@@ -230,13 +233,13 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   giftQrValue: '',
   giftQrImage: '',
   hideDefaultHeroPhotos: false,
-  customAudioMode: 'synth',
-  customAudioUrl: '',
-  customAudioTitle: 'Melodía Ambiental Romántica',
+  customAudioMode: 'url',
+  customAudioUrl: '/assets/aistudio/POR_TI_VOLARE_-_Andrea_Bocelli_Arcano_f7efb475.mp3',
+  customAudioTitle: 'POR TI VOLARE - Andrea Bocelli / Arcano',
   customAudioMime: 'audio/mpeg',
   customAudioChunkCount: 0,
-  customAudioUpdatedToken: '',
-  customAudioDurationSec: 0,
+  customAudioUpdatedToken: 'default-por-ti-volare',
+  customAudioDurationSec: 240,
 };
 
 export const DEFAULT_HERO_PHOTOS = [
@@ -467,9 +470,62 @@ export function sanitizeGodparentsList(raw: unknown): GodparentRole[] {
     .slice(0, 12);
 }
 
-export function mergeWeddingConfig(
-  raw?: Record<string, unknown> | null
-): WeddingConfigRecord {
+export const LOCAL_STORAGE_CONFIG_KEY = 'boda_wedding_config_local';
+
+export function getStoredWeddingConfig(): WeddingConfigRecord {
+  if (typeof window === 'undefined') return DEFAULT_WEDDING_CONFIG;
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return mergeWeddingConfigDirect(parsed);
+      }
+    }
+  } catch (e) {}
+  return DEFAULT_WEDDING_CONFIG;
+}
+
+export function saveStoredWeddingConfig(config: Partial<WeddingConfigRecord>): WeddingConfigRecord {
+  const current = getStoredWeddingConfig();
+  const merged = mergeWeddingConfigDirect({ ...current, ...config });
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_CONFIG_KEY, JSON.stringify(merged));
+      window.dispatchEvent(
+        new CustomEvent('wedding:config-updated', { detail: merged })
+      );
+    } catch (e) {}
+  }
+  return merged;
+}
+
+export const LOCAL_STORAGE_QUOTAS_KEY = 'boda_guest_quotas_local';
+
+export function getStoredGuestQuotas(): GuestQuotaRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_QUOTAS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function saveStoredGuestQuotas(quotas: GuestQuotaRecord[]) {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_QUOTAS_KEY, JSON.stringify(quotas));
+      window.dispatchEvent(
+        new CustomEvent('wedding:quotas-updated', { detail: quotas })
+      );
+    } catch (e) {}
+  }
+}
+
+function mergeWeddingConfigDirect(raw?: Record<string, unknown> | null): WeddingConfigRecord {
   if (!raw) return DEFAULT_WEDDING_CONFIG;
   return {
     googlePhotosUrl: String(
@@ -540,96 +596,66 @@ export function mergeWeddingConfig(
         ? raw.receptionMapUrl.trim()
         : DEFAULT_WEDDING_CONFIG.receptionMapUrl,
     brideParents:
-      typeof raw.brideParents === 'string' && raw.brideParents.trim()
-        ? raw.brideParents.trim()
+      typeof raw.brideParents === 'string'
+        ? raw.brideParents
         : DEFAULT_WEDDING_CONFIG.brideParents,
     groomParents:
-      typeof raw.groomParents === 'string' && raw.groomParents.trim()
-        ? raw.groomParents.trim()
+      typeof raw.groomParents === 'string'
+        ? raw.groomParents
         : DEFAULT_WEDDING_CONFIG.groomParents,
-    godparentsList:
-      'godparentsList' in raw
-        ? sanitizeGodparentsList(raw.godparentsList)
-        : DEFAULT_GODPARENTS_LIST,
+    godparentsList: sanitizeGodparentsList(raw.godparentsList),
     giftEnvelopeNote:
-      typeof raw.giftEnvelopeNote === 'string' && raw.giftEnvelopeNote.trim()
-        ? raw.giftEnvelopeNote.trim().slice(0, 300)
-        : DEFAULT_WEDDING_CONFIG.giftEnvelopeNote,
-    giftBankName:
-      typeof raw.giftBankName === 'string' && raw.giftBankName.trim()
-        ? raw.giftBankName.trim().slice(0, 80)
-        : DEFAULT_WEDDING_CONFIG.giftBankName,
+      typeof raw.giftEnvelopeNote === 'string' ? raw.giftEnvelopeNote : '',
+    giftBankName: typeof raw.giftBankName === 'string' ? raw.giftBankName : '',
     giftAccountHolder:
-      typeof raw.giftAccountHolder === 'string' && raw.giftAccountHolder.trim()
-        ? raw.giftAccountHolder.trim().slice(0, 120)
-        : DEFAULT_WEDDING_CONFIG.giftAccountHolder,
-    giftAccountType:
-      typeof raw.giftAccountType === 'string' && raw.giftAccountType.trim()
-        ? raw.giftAccountType.trim().slice(0, 60)
-        : DEFAULT_WEDDING_CONFIG.giftAccountType,
+      typeof raw.giftAccountHolder === 'string' ? raw.giftAccountHolder : '',
     giftAccountNumber:
-      typeof raw.giftAccountNumber === 'string' && raw.giftAccountNumber.trim()
-        ? raw.giftAccountNumber.trim().slice(0, 60)
-        : DEFAULT_WEDDING_CONFIG.giftAccountNumber,
-    giftQrValue:
-      typeof raw.giftQrValue === 'string'
-        ? raw.giftQrValue.trim().slice(0, 500)
-        : '',
-    giftQrImage:
-      typeof raw.giftQrImage === 'string' ? raw.giftQrImage.trim() : '',
-    hideDefaultHeroPhotos: Boolean(raw.hideDefaultHeroPhotos ?? false),
-    customAudioMode: (() => {
-      if (
-        raw.customAudioUpdatedToken &&
-        typeof raw.customAudioUpdatedToken === 'string' &&
-        raw.customAudioUpdatedToken.trim() !== ''
-      ) {
-        if (raw.customAudioMode !== 'url') {
-          return 'uploaded';
-        }
-      }
-      if (
-        raw.customAudioMode === 'uploaded' ||
-        raw.customAudioMode === 'url' ||
-        raw.customAudioMode === 'synth'
-      ) {
-        return raw.customAudioMode;
-      }
-      if (
-        raw.customAudioUrl &&
-        typeof raw.customAudioUrl === 'string' &&
-        raw.customAudioUrl.startsWith('https://')
-      ) {
-        return 'url';
-      }
-      return 'synth';
-    })(),
+      typeof raw.giftAccountNumber === 'string' ? raw.giftAccountNumber : '',
+    giftAccountType:
+      typeof raw.giftAccountType === 'string' ? raw.giftAccountType : '',
+    giftClabeOrId:
+      typeof raw.giftClabeOrId === 'string' ? raw.giftClabeOrId : '',
+    giftBizPhone: typeof raw.giftBizPhone === 'string' ? raw.giftBizPhone : '',
+    giftAppAlias: typeof raw.giftAppAlias === 'string' ? raw.giftAppAlias : '',
+    customAudioMode:
+      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken
+        ? 'uploaded'
+        : 'url',
     customAudioUrl:
-      typeof raw.customAudioUrl === 'string'
-        ? raw.customAudioUrl.trim().slice(0, 500)
-        : '',
+      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken && typeof raw.customAudioUrl === 'string' && raw.customAudioUrl.trim()
+        ? raw.customAudioUrl.trim()
+        : DEFAULT_WEDDING_CONFIG.customAudioUrl,
     customAudioTitle:
-      typeof raw.customAudioTitle === 'string' && raw.customAudioTitle.trim()
-        ? raw.customAudioTitle.trim().slice(0, 120)
+      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken && typeof raw.customAudioTitle === 'string' && raw.customAudioTitle.trim()
+        ? raw.customAudioTitle.trim()
         : DEFAULT_WEDDING_CONFIG.customAudioTitle,
     customAudioMime:
-      typeof raw.customAudioMime === 'string' && raw.customAudioMime.trim()
-        ? raw.customAudioMime.trim().slice(0, 80)
-        : 'audio/mpeg',
+      typeof raw.customAudioMime === 'string' ? raw.customAudioMime : '',
     customAudioChunkCount:
       typeof raw.customAudioChunkCount === 'number'
-        ? Math.max(0, Number(raw.customAudioChunkCount))
+        ? raw.customAudioChunkCount
         : 0,
     customAudioUpdatedToken:
       typeof raw.customAudioUpdatedToken === 'string'
-        ? raw.customAudioUpdatedToken.trim().slice(0, 64)
+        ? raw.customAudioUpdatedToken
         : '',
     customAudioDurationSec:
       typeof raw.customAudioDurationSec === 'number'
-        ? Math.max(0, Number(raw.customAudioDurationSec))
+        ? raw.customAudioDurationSec
         : 0,
+    hideDefaultHeroPhotos: Boolean(raw.hideDefaultHeroPhotos ?? false),
   };
 }
+
+export function mergeWeddingConfig(
+  raw?: Record<string, unknown> | null
+): WeddingConfigRecord {
+  const local = getStoredWeddingConfig();
+  if (!raw) return local;
+  const mergedRaw = { ...local, ...raw };
+  return mergeWeddingConfigDirect(mergedRaw);
+}
+
 
 export function buildWeddingEventsFromConfig(
   config?: Partial<WeddingConfigRecord>

@@ -141,7 +141,7 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   const resolvedCustomSrc =
     audioMode === 'uploaded'
       ? uploadedBlobUrl || (audioToken ? AUDIO_BLOB_CACHE.get(audioToken) || '' : '')
-      : audioMode === 'url' && audioUrl.startsWith('https://')
+      : audioMode === 'url' && audioUrl
         ? audioUrl
         : '';
 
