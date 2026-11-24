@@ -1,21 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Music, Volume2, VolumeX } from 'lucide-react';
-import { WeddingConfigRecord } from '../data/weddingData';
+import { WeddingConfigRecord, DEFAULT_WEDDING_CONFIG } from '../data/weddingData';
 import { db } from '../firebase';
 import { assembleAudioBlobUrlFromChunks } from '../utils/audioStorage';
 
-// In-memory cache across component re-renders to ensure zero-delay playback
 const AUDIO_BLOB_CACHE = new Map<string, string>();
-
-// Gentle romantic ambient chord progression synthesized via Web Audio API
-// as fallback or when the couple chooses the built-in romantic melody.
-const PROGRESSION = [
-  [261.63, 329.63, 392.0, 493.88], // Cmaj7
-  [220.0, 261.63, 329.63, 392.0], // Am7
-  [174.61, 220.0, 261.63, 329.63], // Fmaj7
-  [196.0, 246.94, 293.66, 392.0], // G6
-];
 
 interface AmbientMusicPlayerProps {
   config: WeddingConfigRecord;
@@ -26,15 +16,14 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Automatically prioritize uploaded song if a track token is present
   const audioToken = config.customAudioUpdatedToken?.trim() ?? '';
   const audioMode = audioToken && config.customAudioMode !== 'url'
     ? 'uploaded'
-    : (config.customAudioMode ?? 'synth');
+    : 'url';
 
-  const audioUrl = config.customAudioUrl?.trim() ?? '';
+  const audioUrl = config.customAudioUrl?.trim() || DEFAULT_WEDDING_CONFIG.customAudioUrl || '/assets/aistudio/POR_TI_VOLARE_-_Andrea_Bocelli_Arcano_f7efb475.mp3';
   const audioMime = config.customAudioMime?.trim() || 'audio/mpeg';
-  const audioTitle = config.customAudioTitle?.trim() || 'Música de la boda';
+  const audioTitle = config.customAudioTitle?.trim() || 'POR TI VOLARE - Andrea Bocelli / Arcano';
 
   const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string>(() => {
     if (audioMode === 'uploaded' && audioToken && AUDIO_BLOB_CACHE.has(audioToken)) {
@@ -48,19 +37,12 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   );
   const loadChunksPromiseRef = useRef<Promise<string> | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
-
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const intervalRef = useRef<number | null>(null);
-  const stepRef = useRef(0);
   const isPlayingRef = useRef(false);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Preload uploaded audio chunks into an in-memory Blob URL so playback can start
-  // immediately when user interacts or opens the invitation envelope.
   useEffect(() => {
     let cancelled = false;
 
@@ -76,10 +58,6 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
       loadedTokenRef.current = audioToken;
       setUploadedBlobUrl(cached);
       loadChunksPromiseRef.current = Promise.resolve(cached);
-      return;
-    }
-
-    if (loadedTokenRef.current === audioToken && uploadedBlobUrl) {
       return;
     }
 
@@ -102,9 +80,7 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
           };
         });
 
-        // Ensure chunks are strictly in sequential order
         rawChunks.sort((a, b) => a.index - b.index);
-
         if (rawChunks.length === 0) return '';
 
         const nextUrl = assembleAudioBlobUrlFromChunks(rawChunks, audioMime);
@@ -117,7 +93,6 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         loadedTokenRef.current = audioToken;
         setUploadedBlobUrl(nextUrl);
 
-        // Preload HTML5 audio element
         if (audioElRef.current) {
           audioElRef.current.src = nextUrl;
           audioElRef.current.load();
@@ -125,129 +100,27 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
 
         return nextUrl;
       } catch (err) {
-        console.warn('Error loading custom audio chunks from Firestore:', err);
+        console.warn('Error loading custom audio chunks:', err);
         return '';
       }
     };
 
-    const task = loadChunks();
-    loadChunksPromiseRef.current = task;
+    loadChunksPromiseRef.current = loadChunks();
 
     return () => {
       cancelled = true;
     };
-  }, [audioMode, audioToken, audioMime, uploadedBlobUrl]);
+  }, [audioMode, audioToken, audioMime]);
 
   const resolvedCustomSrc =
     audioMode === 'uploaded'
       ? uploadedBlobUrl || (audioToken ? AUDIO_BLOB_CACHE.get(audioToken) || '' : '')
-      : audioMode === 'url' && audioUrl
-        ? audioUrl
-        : '';
-
-  const stopSynth = () => {
-    if (intervalRef.current !== null) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    if (masterGainRef.current && audioCtxRef.current) {
-      const now = audioCtxRef.current.currentTime;
-      masterGainRef.current.gain.cancelScheduledValues(now);
-      masterGainRef.current.gain.linearRampToValueAtTime(0.0001, now + 0.35);
-    }
-  };
-
-  const stopHtmlAudio = () => {
-    const el = audioElRef.current;
-    if (el) {
-      el.pause();
-    }
-  };
-
-  const playArpeggioNote = (
-    ctx: AudioContext,
-    destination: GainNode,
-    freq: number,
-    delayOffset: number
-  ) => {
-    const now = ctx.currentTime + delayOffset;
-    const osc = ctx.createOscillator();
-    const noteGain = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now);
-
-    noteGain.gain.setValueAtTime(0.0001, now);
-    noteGain.gain.linearRampToValueAtTime(0.09, now + 0.14);
-    noteGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.8);
-
-    osc.connect(noteGain);
-    noteGain.connect(destination);
-
-    osc.start(now);
-    osc.stop(now + 2.9);
-  };
-
-  const startSynth = async () => {
-    stopHtmlAudio();
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
-
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioCtx();
-      const master = audioCtxRef.current.createGain();
-      master.gain.value = 0.0001;
-
-      const filter = audioCtxRef.current.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 1400;
-
-      master.connect(filter);
-      filter.connect(audioCtxRef.current.destination);
-      masterGainRef.current = master;
-    }
-
-    const ctx = audioCtxRef.current;
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
-    }
-
-    if (masterGainRef.current) {
-      const now = ctx.currentTime;
-      masterGainRef.current.gain.cancelScheduledValues(now);
-      masterGainRef.current.gain.linearRampToValueAtTime(0.42, now + 0.5);
-    }
-
-    if (intervalRef.current !== null) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    const triggerChord = () => {
-      if (!audioCtxRef.current || !masterGainRef.current) return;
-      const chord = PROGRESSION[stepRef.current % PROGRESSION.length];
-      chord.forEach((freq, idx) => {
-        playArpeggioNote(audioCtxRef.current!, masterGainRef.current!, freq, idx * 0.42);
-      });
-      stepRef.current += 1;
-    };
-
-    triggerChord();
-    intervalRef.current = window.setInterval(triggerChord, 3200);
-  };
+      : audioUrl;
 
   const startPlayback = async () => {
     let targetSrc = resolvedCustomSrc;
 
-    // If custom audio was configured as uploaded, wait briefly for in-flight download:
     if (audioMode === 'uploaded' && !targetSrc && loadChunksPromiseRef.current) {
-      if (audioElRef.current) {
-        try {
-          audioElRef.current.load();
-        } catch {}
-      }
       try {
         const resolved = await Promise.race([
           loadChunksPromiseRef.current,
@@ -258,13 +131,10 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         if (resolved) {
           targetSrc = resolved;
         }
-      } catch {
-        // Fall back to synth on timeout
-      }
+      } catch {}
     }
 
     if (targetSrc && audioElRef.current) {
-      stopSynth();
       try {
         const el = audioElRef.current;
         if (el.src !== targetSrc) {
@@ -273,19 +143,18 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         el.volume = 0.85;
         await el.play();
         setIsPlaying(true);
-        return;
       } catch (err) {
-        console.warn('HTML5 audio play rejected, using fallback synth:', err);
+        console.warn('Autoplay prevented or audio load failed:', err);
+        setIsPlaying(false);
       }
     }
-
-    await startSynth();
-    setIsPlaying(true);
   };
 
   const stopPlayback = () => {
-    stopHtmlAudio();
-    stopSynth();
+    const el = audioElRef.current;
+    if (el) {
+      el.pause();
+    }
     setIsPlaying(false);
   };
 
@@ -297,32 +166,11 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     }
   };
 
-  // Seamlessly transition if the custom audio finishes loading while user is already playing
-  useEffect(() => {
-    if (!isPlayingRef.current) return;
-
-    if (audioMode === 'uploaded' && resolvedCustomSrc && audioElRef.current) {
-      stopSynth();
-      const el = audioElRef.current;
-      if (el.src !== resolvedCustomSrc) {
-        el.src = resolvedCustomSrc;
-      }
-      el.volume = 0.85;
-      el.play().catch(() => {
-        void startSynth();
-      });
-    } else if (audioMode === 'synth') {
-      stopHtmlAudio();
-      void startSynth();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioMode, resolvedCustomSrc]);
-
-  // Listener for opening envelope
+  // Start on envelope open event
   useEffect(() => {
     const handleStartFromEnvelope = () => {
       if (!isPlayingRef.current) {
-        void startPlayback().catch(() => {});
+        void startPlayback();
       }
     };
 
@@ -330,54 +178,36 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     return () => {
       window.removeEventListener('wedding:start-ambient-music', handleStartFromEnvelope);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedCustomSrc, audioMode]);
+  }, [resolvedCustomSrc]);
 
-  // Automatic playback without guest intervention:
-  // 1) Try autoplay immediately on mount.
-  // 2) On the first touch/click anywhere on the page, automatically start playing the song!
+  // First user interaction auto-play
   useEffect(() => {
-    const tryAutoplay = () => {
+    const handleFirstInteraction = () => {
       if (!isPlayingRef.current) {
-        void startPlayback().catch(() => {});
+        void startPlayback();
       }
+      cleanup();
     };
 
-    tryAutoplay();
-
-    const handleFirstUserInteraction = () => {
-      if (!isPlayingRef.current) {
-        void startPlayback().catch(() => {});
-      }
-      cleanupInteractionListeners();
+    const cleanup = () => {
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
     };
 
-    const cleanupInteractionListeners = () => {
-      window.removeEventListener('pointerdown', handleFirstUserInteraction);
-      window.removeEventListener('touchstart', handleFirstUserInteraction);
-      window.removeEventListener('click', handleFirstUserInteraction);
-      window.removeEventListener('keydown', handleFirstUserInteraction);
-    };
+    window.addEventListener('pointerdown', handleFirstInteraction, { once: true, passive: true });
+    window.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true });
+    window.addEventListener('click', handleFirstInteraction, { once: true, passive: true });
+    window.addEventListener('keydown', handleFirstInteraction, { once: true, passive: true });
 
-    window.addEventListener('pointerdown', handleFirstUserInteraction, { once: true, passive: true });
-    window.addEventListener('touchstart', handleFirstUserInteraction, { once: true, passive: true });
-    window.addEventListener('click', handleFirstUserInteraction, { once: true, passive: true });
-    window.addEventListener('keydown', handleFirstUserInteraction, { once: true, passive: true });
-
-    return () => {
-      cleanupInteractionListeners();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return cleanup;
   }, [resolvedCustomSrc]);
 
   useEffect(() => {
     return () => {
-      stopHtmlAudio();
-      if (intervalRef.current !== null) {
-        window.clearInterval(intervalRef.current);
-      }
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
+      if (audioElRef.current) {
+        audioElRef.current.pause();
       }
     };
   }, []);
@@ -386,7 +216,7 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5">
       <audio
         ref={audioElRef}
-        src={resolvedCustomSrc || undefined}
+        src={resolvedCustomSrc}
         loop
         playsInline
         preload="auto"
