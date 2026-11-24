@@ -2728,16 +2728,18 @@ export const CoupleAdminSection: React.FC = () => {
       <div className="max-w-6xl mx-auto relative z-10">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <p className="text-xs uppercase tracking-[0.22em] text-[#b89753] font-semibold">
-            Acceso Privado · Sección Fija de Novios
+            · Acceso Privado ·
           </p>
           <h2 className="mt-2 font-serif text-4xl sm:text-5xl font-semibold text-[#2c3e35]">
             Panel de Administración de Novios
           </h2>
-          <p className="mt-3 text-sm text-[#2c3e35]/75 leading-relaxed">
-            Consulta el listado de invitaciones confirmadas con ubicación de
-            mesa, exporta reportes para el salón y descarga todas las
-            fotografías del evento.
-          </p>
+          {isAuthorizedCouple && (
+            <p className="mt-3 text-sm text-[#2c3e35]/75 leading-relaxed">
+              Consulta el listado de invitaciones confirmadas con ubicación de
+              mesa, exporta reportes para el salón y descarga todas las
+              fotografías del evento.
+            </p>
+          )}
         </div>
 
         {/* Gate 1: Not Signed In as Authorized Couple */}
@@ -2751,8 +2753,7 @@ export const CoupleAdminSection: React.FC = () => {
                 Acceso Exclusivo (Admin / Novio)
               </h3>
               <p className="mt-1 text-xs text-[#2c3e35]/65">
-                Ingresa con tu usuario asignado (<code>admin</code> o{' '}
-                <code>novio</code>) y tu contraseña.
+                Ingresa con tu usuario asignado.
               </p>
             </div>
 

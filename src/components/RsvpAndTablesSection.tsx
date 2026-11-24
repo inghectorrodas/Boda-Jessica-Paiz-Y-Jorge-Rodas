@@ -218,7 +218,7 @@ export const RsvpAndTablesSection: React.FC = () => {
     const phoneKey = normalizePhoneKey(phoneInput);
     if (!isValidPhoneKey(phoneKey)) {
       setLookupError(
-        'Ingresa un número de teléfono válido (al menos 8 dígitos, ej. 7687-4760 o +503 76874760).'
+        'Ingresa un número de teléfono válido (al menos 8 dígitos, ej. 7000-0000 o +503 70000000).'
       );
       return;
     }
@@ -750,7 +750,8 @@ export const RsvpAndTablesSection: React.FC = () => {
                   <div className="rounded-xl bg-[#fcfbf9] border border-[#b89753]/30 p-4 space-y-3 text-center">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.14em] text-[#b89753] font-semibold text-center">
-                        Admin Hector Rodas (Padrino de Tarjeta)
+                        <span className="block">Admin Hector Rodas</span>
+                        <span className="block mt-0.5">(Padrino de Tarjeta)</span>
                       </p>
                       <p className="font-serif text-xl font-semibold text-[#2c3e35] mt-0.5 tabular-nums">
                         {adminPhone}
@@ -781,8 +782,9 @@ export const RsvpAndTablesSection: React.FC = () => {
 
                   <div className="rounded-xl bg-[#fcfbf9] border border-[#b89753]/30 p-4 space-y-3 text-center">
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-[#b89753] font-semibold">
-                        Jorge Luis (Novio)
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-[#b89753] font-semibold text-center">
+                        <span className="block">Jorge Rodas</span>
+                        <span className="block mt-0.5">(Novio)</span>
                       </p>
                       <p className="font-serif text-xl font-semibold text-[#2c3e35] mt-0.5 tabular-nums">
                         {groomPhone}
@@ -1121,7 +1123,7 @@ export const RsvpAndTablesSection: React.FC = () => {
                   htmlFor="lookupPhoneInput"
                   className="block text-sm font-medium text-[#2c3e35] mb-2 text-center"
                 >
-                  Número de Teléfono / WhatsApp
+                  Número de Teléfono
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-[#b89753] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1133,8 +1135,8 @@ export const RsvpAndTablesSection: React.FC = () => {
                     maxLength={30}
                     value={phoneInput}
                     onChange={(e) => setPhoneInput(e.target.value)}
-                    placeholder="Ej. 7687-4760 o +503 76874760"
-                    className="w-full h-12 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl pl-11 pr-4 text-sm text-[#2c3e35] placeholder:text-[#2c3e35]/40 focus:outline-none focus:border-[#b89753] focus:ring-1 focus:ring-[#b89753]"
+                    placeholder="Ej. 7000-0000 o +503 70000000"
+                    className="w-full h-12 bg-[#fcfbf9] border border-[#b89753]/35 rounded-xl pl-11 pr-4 text-sm text-center text-[#2c3e35] placeholder:text-[#2c3e35]/40 focus:outline-none focus:border-[#b89753] focus:ring-1 focus:ring-[#b89753]"
                   />
                 </div>
                 <p className="mt-2 text-xs text-[#2c3e35]/60 text-center">
