@@ -38,7 +38,9 @@ import {
   Save,
   Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
+  Info,
   Trash2,
   Upload,
   UserPlus,
@@ -2744,7 +2746,50 @@ export const CoupleAdminSection: React.FC = () => {
 
         {/* Gate 1: Not Signed In as Authorized Couple */}
         {!isAuthorizedCouple ? (
-          <div className="max-w-md mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-6 sm:p-8 shadow-sm">
+          currentUser ? (
+            /* Unauthorized Logged-In User Card ("Acceso no autorizado") */
+            <div className="max-w-md mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
+              <div className="w-14 h-14 rounded-full bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[#b89753] font-semibold">
+                JESSICA & JORGE
+              </p>
+              <h3 className="font-serif text-3xl font-semibold text-[#2c3e35] mt-1">
+                Acceso no autorizado
+              </h3>
+              <p className="mt-2 text-sm text-[#2c3e35]/75 leading-relaxed">
+                La cuenta con la que intentas ingresar no cuenta con los permisos necesarios para acceder a esta sección.
+              </p>
+
+              <div className="bg-[#f7f5f0] border border-[#b89753]/30 rounded-xl p-4 mt-5 text-left flex items-start gap-3">
+                <Info className="w-5 h-5 text-[#b89753] shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-sm text-[#2c3e35]">
+                    ¿Necesitas ayuda?
+                  </h4>
+                  <p className="text-xs text-[#2c3e35]/70 mt-0.5 leading-relaxed">
+                    Si consideras que deberías tener acceso, comunícate con el administrador de la boda para solicitar asistencia.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="w-full h-11 rounded-xl bg-[#2c3e35] hover:bg-[#1f2c26] text-white text-xs font-semibold tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-2 mt-6 shadow-sm"
+              >
+                <KeyRound className="w-4 h-4 text-[#b89753]" />
+                <span>Ingresar con otra cuenta</span>
+              </button>
+
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[#2c3e35]/50 mt-6 block">
+                GRACIAS POR SER PARTE DE NUESTRO DÍA ESPECIAL
+              </span>
+            </div>
+          ) : (
+            <div className="max-w-md mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-6 sm:p-8 shadow-sm">
             <div className="text-center mb-6">
               <div className="w-12 h-12 rounded-full bg-[#f7f5f0] border border-[#b89753]/30 text-[#b89753] flex items-center justify-center mx-auto mb-3">
                 <Lock className="w-5 h-5" />
@@ -2834,6 +2879,7 @@ export const CoupleAdminSection: React.FC = () => {
               className="w-full h-11"
             />
           </div>
+          )
         ) : !currentUser?.emailVerified && !isAuthorizedCouple ? (
           /* Gate 2: Email/Password User Needs Verification */
           <div className="max-w-lg mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-8 text-center shadow-sm space-y-4">
