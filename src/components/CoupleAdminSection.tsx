@@ -290,6 +290,7 @@ export const CoupleAdminSection: React.FC = () => {
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [unauthorizedAttemptEmail, setUnauthorizedAttemptEmail] = useState<string | null>(null);
   const [verificationSent, setVerificationSent] = useState(false);
 
   // Admin data state
@@ -527,6 +528,9 @@ export const CoupleAdminSection: React.FC = () => {
 
   const isAuthorizedCouple =
     Boolean(currentUser) && isAuthorizedCoupleEmail(currentUser?.email);
+
+  const hasUnauthorizedAttempt =
+    Boolean(unauthorizedAttemptEmail) || (Boolean(currentUser) && !isAuthorizedCouple);
 
   const isVerifiedCoupleAdmin = isAuthorizedCouple;
 
@@ -789,9 +793,7 @@ export const CoupleAdminSection: React.FC = () => {
 
     const resolvedEmail = resolveLoginIdentifier(identifier);
     if (!isAuthorizedCoupleEmail(resolvedEmail)) {
-      setAuthError(
-        'Usuario no autorizado. Utiliza admin (ing.hectorrodas@gmail.com) o novio (jorgerodad@gmail.com).'
-      );
+      setUnauthorizedAttemptEmail(resolvedEmail);
       return;
     }
 
@@ -870,9 +872,7 @@ export const CoupleAdminSection: React.FC = () => {
       const cred = await signInWithPopup(auth, adminGoogleProvider);
       if (!isAuthorizedCoupleEmail(cred.user.email)) {
         await signOut(auth);
-        setAuthError(
-          `La cuenta ${cred.user.email ?? ''} no está autorizada como administrador. Utiliza admin (ing.hectorrodas@gmail.com) o novio (jorgerodad@gmail.com).`
-        );
+        setUnauthorizedAttemptEmail(cred.user.email);
         return;
       }
       await syncAdminTokenAndDoc(cred.user, true);
@@ -931,6 +931,7 @@ export const CoupleAdminSection: React.FC = () => {
     clearDriveAccessToken();
     setDriveToken(null);
     setDriveEmail(null);
+    setUnauthorizedAttemptEmail(null);
     await signOut(auth);
     setIdentifier('');
     setPassword('');
@@ -2746,7 +2747,7 @@ export const CoupleAdminSection: React.FC = () => {
 
         {/* Gate 1: Not Signed In as Authorized Couple */}
         {!isAuthorizedCouple ? (
-          currentUser ? (
+          hasUnauthorizedAttempt ? (
             /* Unauthorized Logged-In User Card ("Acceso no autorizado") */
             <div className="max-w-md mx-auto bg-white border border-[#b89753]/35 rounded-2xl p-6 sm:p-8 shadow-sm text-center">
               <div className="w-14 h-14 rounded-full bg-rose-50 border border-rose-200 text-rose-700 flex items-center justify-center mx-auto mb-4">
