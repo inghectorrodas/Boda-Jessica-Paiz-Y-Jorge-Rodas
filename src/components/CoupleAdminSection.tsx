@@ -86,12 +86,13 @@ import {
   CustomAudioMode,
   DEFAULT_GODPARENTS_LIST,
   DEFAULT_HERO_PHOTOS,
+  DEFAULT_INTEGRATED_AUDIO_TITLE,
+  DEFAULT_INTEGRATED_AUDIO_URL,
   DEFAULT_WEDDING_CONFIG,
   formatTime12h,
   formatWeddingEventDateLabel,
   formatWeddingReportDateLabel,
   getGuestRelationLabel,
-  getZoneInfo,
   GodparentRole,
   GUEST_RELATION_GROUPS,
   GuestQuotaRecord,
@@ -107,6 +108,7 @@ import {
   resolveLoginIdentifier,
   RsvpRecord,
   TABLE_CAPACITY,
+  WeddingConfigRecord,
   WeddingPhotoRecord,
 } from '../data/weddingData';
 import {
@@ -443,12 +445,12 @@ export const CoupleAdminSection: React.FC = () => {
   const [heroMediaError, setHeroMediaError] = useState('');
   const [heroMediaSuccess, setHeroMediaSuccess] = useState('');
 
-  const [customAudioMode, setCustomAudioMode] = useState<CustomAudioMode>('url');
-  const [customAudioUrl, setCustomAudioUrl] = useState(
-    DEFAULT_WEDDING_CONFIG.customAudioUrl ?? ''
+  const [customAudioMode, setCustomAudioMode] = useState<CustomAudioMode>(
+    DEFAULT_WEDDING_CONFIG.customAudioMode ?? 'synth'
   );
+  const [customAudioUrl, setCustomAudioUrl] = useState('');
   const [customAudioTitle, setCustomAudioTitle] = useState(
-    DEFAULT_WEDDING_CONFIG.customAudioTitle ?? 'POR TI VOLARE - Andrea Bocelli / Arcano'
+    DEFAULT_INTEGRATED_AUDIO_TITLE
   );
   const [customAudioMime, setCustomAudioMime] = useState('audio/mpeg');
   const [customAudioChunkCount, setCustomAudioChunkCount] = useState(0);
@@ -726,19 +728,16 @@ export const CoupleAdminSection: React.FC = () => {
           setGiftQrValue(merged.giftQrValue ?? '');
           setGiftQrImage(merged.giftQrImage ?? '');
           setHideDefaultHeroPhotos(Boolean(merged.hideDefaultHeroPhotos));
-          setCustomAudioMode(merged.customAudioMode ?? 'url');
-          setCustomAudioUrl(
-            merged.customAudioUrl || DEFAULT_WEDDING_CONFIG.customAudioUrl || ''
-          );
+          setCustomAudioMode(merged.customAudioMode ?? 'synth');
+          setCustomAudioUrl(merged.customAudioUrl ?? '');
           setCustomAudioTitle(
-            merged.customAudioTitle ||
-              DEFAULT_WEDDING_CONFIG.customAudioTitle ||
-              'POR TI VOLARE - Andrea Bocelli / Arcano'
+            merged.customAudioTitle || DEFAULT_INTEGRATED_AUDIO_TITLE
           );
           setCustomAudioMime(merged.customAudioMime ?? 'audio/mpeg');
           setCustomAudioChunkCount(merged.customAudioChunkCount ?? 0);
           setCustomAudioUpdatedToken(merged.customAudioUpdatedToken ?? '');
           setCustomAudioDurationSec(merged.customAudioDurationSec ?? 0);
+          saveStoredWeddingConfig(merged);
         }
       },
       (error) => {
@@ -1583,17 +1582,12 @@ export const CoupleAdminSection: React.FC = () => {
       'Bebes',
       'Total Asientos',
       'Mesa Asignada',
-      'Ubicacion en Salon',
       'Telefono',
       'Notas / Alergias',
       'Fecha Registro',
     ];
 
     const rows = rsvps.map((r) => {
-      const zone =
-        r.attending && r.tableNumber > 0
-          ? getZoneInfo(r.tableNumber).zoneLabel
-          : 'N/A';
       return [
         escapeCsvCell(r.guestName),
         escapeCsvCell(getGuestRelationLabel(r.guestGroup)),
@@ -1603,7 +1597,6 @@ export const CoupleAdminSection: React.FC = () => {
         escapeCsvCell(r.attending ? r.babies : 0),
         escapeCsvCell(r.attending ? r.adults + r.kids : 0),
         escapeCsvCell(r.attending ? `Mesa ${r.tableNumber}` : 'Sin mesa'),
-        escapeCsvCell(zone),
         escapeCsvCell(r.phone),
         escapeCsvCell(r.notes),
         escapeCsvCell(formatRsvpDate(r.createdAt)),
@@ -1738,7 +1731,7 @@ export const CoupleAdminSection: React.FC = () => {
       .slice(0, 500);
     const resolvedAudioTitle =
       (overrides?.customAudioTitle ?? customAudioTitle).trim().slice(0, 120) ||
-      'Melodía Ambiental Romántica';
+      DEFAULT_INTEGRATED_AUDIO_TITLE;
     const resolvedAudioMime =
       (overrides?.customAudioMime ?? customAudioMime).trim().slice(0, 80) ||
       'audio/mpeg';
@@ -1767,8 +1760,26 @@ export const CoupleAdminSection: React.FC = () => {
     const sanitizeUrl = (url: string) => {
       const trimmed = url.trim().slice(0, 500);
       if (!trimmed) return '';
-      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (/^https?:\/\//i.test(trimmed)) {
+        return trimmed.replace(/^https?:\/\//i, (m) => m.toLowerCase());
+      }
       return `https://${trimmed}`;
+    };
+
+    const sanitizeExternalAudioUrl = (url: string) => {
+      const trimmed = url.trim().slice(0, 500);
+      if (
+        !trimmed ||
+        trimmed.startsWith('/assets/') ||
+        trimmed.startsWith('https:///') ||
+        trimmed.startsWith('http:///')
+      ) {
+        return '';
+      }
+      if (/^https?:\/\/[^/]/i.test(trimmed)) {
+        return trimmed.replace(/^https?:\/\//i, (m) => m.toLowerCase());
+      }
+      return '';
     };
 
     return {
@@ -1832,7 +1843,7 @@ export const CoupleAdminSection: React.FC = () => {
       hideDefaultHeroPhotos:
         overrides?.hideDefaultHeroPhotos ?? hideDefaultHeroPhotos,
       customAudioMode: resolvedAudioMode,
-      customAudioUrl: sanitizeUrl(resolvedAudioUrl),
+      customAudioUrl: sanitizeExternalAudioUrl(resolvedAudioUrl),
       customAudioTitle: resolvedAudioTitle,
       customAudioMime: resolvedAudioMime,
       customAudioChunkCount: resolvedAudioChunkCount,
@@ -1840,6 +1851,13 @@ export const CoupleAdminSection: React.FC = () => {
       customAudioDurationSec: resolvedAudioDuration,
       updatedAt: serverTimestamp(),
     };
+  };
+
+  const syncLocalConfigFromPayload = (
+    payload: ReturnType<typeof buildPersistedSettingsPayload>
+  ) => {
+    const { updatedAt: _ignored, ...rest } = payload;
+    saveStoredWeddingConfig(rest as Partial<WeddingConfigRecord>);
   };
 
   const isPermissionDeniedError = (err: unknown): boolean => {
@@ -1906,9 +1924,11 @@ export const CoupleAdminSection: React.FC = () => {
 
     setSavingSettings(true);
     try {
+      const nextPayload = buildPersistedSettingsPayload();
       await executeAdminFirestoreWrite(async () => {
-        await setDoc(doc(db, 'wedding_settings', 'main'), buildPersistedSettingsPayload(), { merge: true });
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, { merge: true });
       });
+      syncLocalConfigFromPayload(nextPayload);
       setSettingsSaved(true);
       window.setTimeout(() => setSettingsSaved(false), 3500);
     } catch (error) {
@@ -2055,6 +2075,7 @@ export const CoupleAdminSection: React.FC = () => {
       await executeAdminFirestoreWrite(async () => {
         await setDoc(doc(db, 'wedding_settings', 'main'), payload, { merge: true });
       });
+      syncLocalConfigFromPayload(payload);
       setSavedSectionKey(sectionKey);
       if (sectionKey === 'all') {
         setWeddingDetailsSaved(true);
@@ -2169,23 +2190,30 @@ export const CoupleAdminSection: React.FC = () => {
         const photoId = `hero_${Date.now()}_${i}_${Math.random()
           .toString(36)
           .slice(2, 6)}`;
-        await setDoc(doc(db, 'wedding_hero_photos', photoId), {
-          id: photoId,
-          imageData: compressed.imageData,
-          caption: '',
-          sortOrder: Math.min(100, baseOrder + i),
-          active: true,
-          createdAt: serverTimestamp(),
+        await executeAdminFirestoreWrite(async () => {
+          await setDoc(doc(db, 'wedding_hero_photos', photoId), {
+            id: photoId,
+            imageData: compressed.imageData,
+            caption: '',
+            sortOrder: Math.min(100, baseOrder + i),
+            active: true,
+            createdAt: serverTimestamp(),
+          });
         });
         uploadedCount += 1;
       }
 
       if (hadZeroPhotos && !hideDefaultHeroPhotos) {
+        const nextPayload = buildPersistedSettingsPayload({
+          hideDefaultHeroPhotos: true,
+        });
+        await executeAdminFirestoreWrite(async () => {
+          await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+            merge: true,
+          });
+        });
         setHideDefaultHeroPhotos(true);
-        await setDoc(
-          doc(db, 'wedding_settings', 'main'),
-          buildPersistedSettingsPayload({ hideDefaultHeroPhotos: true })
-        );
+        syncLocalConfigFromPayload(nextPayload);
       }
 
       setHeroMediaSuccess(
@@ -2196,9 +2224,9 @@ export const CoupleAdminSection: React.FC = () => {
       window.setTimeout(() => setHeroMediaSuccess(''), 4000);
     } catch (err) {
       setHeroMediaError(
-        err instanceof Error
+        err instanceof Error && !isPermissionDeniedError(err)
           ? err.message
-          : 'No se pudieron subir las imágenes en este momento.'
+          : formatFirestoreSaveError(err, currentUser)
       );
     } finally {
       setUploadingHeroImages(false);
@@ -2211,8 +2239,9 @@ export const CoupleAdminSection: React.FC = () => {
     setHeroMediaError('');
     setHeroMediaSuccess('');
 
-    const cleanUrl = newHeroUrlInput.trim().slice(0, 500);
-    if (!cleanUrl.startsWith('https://')) {
+    const rawUrl = newHeroUrlInput.trim().slice(0, 500);
+    const cleanUrl = rawUrl.replace(/^https:\/\//i, 'https://');
+    if (!/^https:\/\/[^/]/i.test(cleanUrl)) {
       setHeroMediaError(
         'El enlace de la imagen debe comenzar con https:// (o súbela directamente desde tu dispositivo).'
       );
@@ -2230,21 +2259,28 @@ export const CoupleAdminSection: React.FC = () => {
         .toString(36)
         .slice(2, 6)}`;
 
-      await setDoc(doc(db, 'wedding_hero_photos', photoId), {
-        id: photoId,
-        imageData: cleanUrl,
-        caption: newHeroCaptionInput.trim().slice(0, 120),
-        sortOrder: nextOrder,
-        active: true,
-        createdAt: serverTimestamp(),
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_hero_photos', photoId), {
+          id: photoId,
+          imageData: cleanUrl,
+          caption: newHeroCaptionInput.trim().slice(0, 120),
+          sortOrder: nextOrder,
+          active: true,
+          createdAt: serverTimestamp(),
+        });
       });
 
       if (hadZeroPhotos && !hideDefaultHeroPhotos) {
+        const nextPayload = buildPersistedSettingsPayload({
+          hideDefaultHeroPhotos: true,
+        });
+        await executeAdminFirestoreWrite(async () => {
+          await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+            merge: true,
+          });
+        });
         setHideDefaultHeroPhotos(true);
-        await setDoc(
-          doc(db, 'wedding_settings', 'main'),
-          buildPersistedSettingsPayload({ hideDefaultHeroPhotos: true })
-        );
+        syncLocalConfigFromPayload(nextPayload);
       }
 
       setNewHeroUrlInput('');
@@ -2252,15 +2288,7 @@ export const CoupleAdminSection: React.FC = () => {
       setHeroMediaSuccess('Imagen agregada al carrusel de portada.');
       window.setTimeout(() => setHeroMediaSuccess(''), 4000);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.CREATE,
-          'wedding_hero_photos'
-        );
-      } catch {
-        setHeroMediaError('No se pudo guardar el enlace de la imagen.');
-      }
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     } finally {
       setUploadingHeroImages(false);
     }
@@ -2278,16 +2306,18 @@ export const CoupleAdminSection: React.FC = () => {
 
     try {
       const compressed = await compressWeddingPhoto(file);
-      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
-        imageData: compressed.imageData,
+      await executeAdminFirestoreWrite(async () => {
+        await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+          imageData: compressed.imageData,
+        });
       });
       setHeroMediaSuccess('Fotografía actualizada correctamente.');
       window.setTimeout(() => setHeroMediaSuccess(''), 3500);
     } catch (err) {
       setHeroMediaError(
-        err instanceof Error
+        err instanceof Error && !isPermissionDeniedError(err)
           ? err.message
-          : 'No se pudo reemplazar la fotografía.'
+          : formatFirestoreSaveError(err, currentUser)
       );
     } finally {
       setReplacingHeroId(null);
@@ -2296,37 +2326,33 @@ export const CoupleAdminSection: React.FC = () => {
   };
 
   const handleSaveHeroCaption = async (photo: HeroPhotoRecord) => {
-    const nextCaption = (
-      heroCaptionDrafts[photo.id] ?? photo.caption
-    )
+    setHeroMediaError('');
+    const nextCaption = (heroCaptionDrafts[photo.id] ?? photo.caption)
       .trim()
       .slice(0, 120);
     try {
-      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
-        caption: nextCaption,
+      await executeAdminFirestoreWrite(async () => {
+        await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+          caption: nextCaption,
+        });
       });
       setHeroMediaSuccess('Título de foto guardado.');
       window.setTimeout(() => setHeroMediaSuccess(''), 2500);
     } catch (error) {
-      handleFirestoreError(
-        error,
-        OperationType.UPDATE,
-        `wedding_hero_photos/${photo.id}`
-      );
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     }
   };
 
   const handleToggleHeroPhotoActive = async (photo: HeroPhotoRecord) => {
+    setHeroMediaError('');
     try {
-      await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
-        active: !photo.active,
+      await executeAdminFirestoreWrite(async () => {
+        await updateDoc(doc(db, 'wedding_hero_photos', photo.id), {
+          active: !photo.active,
+        });
       });
     } catch (error) {
-      handleFirestoreError(
-        error,
-        OperationType.UPDATE,
-        `wedding_hero_photos/${photo.id}`
-      );
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     }
   };
 
@@ -2338,32 +2364,32 @@ export const CoupleAdminSection: React.FC = () => {
     const [moved] = reordered.splice(index, 1);
     reordered.splice(targetIndex, 0, moved);
 
+    setHeroMediaError('');
     try {
-      const batch = writeBatch(db);
-      reordered.forEach((item, idx) => {
-        batch.update(doc(db, 'wedding_hero_photos', item.id), {
-          sortOrder: idx,
+      await executeAdminFirestoreWrite(async () => {
+        const batch = writeBatch(db);
+        reordered.forEach((item, idx) => {
+          batch.update(doc(db, 'wedding_hero_photos', item.id), {
+            sortOrder: idx,
+          });
         });
+        await batch.commit();
       });
-      await batch.commit();
     } catch (error) {
-      handleFirestoreError(
-        error,
-        OperationType.UPDATE,
-        'wedding_hero_photos'
-      );
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     }
   };
 
   const handleDeleteHeroPhoto = async (photoId: string) => {
+    setHeroMediaError('');
     try {
-      await deleteDoc(doc(db, 'wedding_hero_photos', photoId));
+      await executeAdminFirestoreWrite(async () => {
+        await deleteDoc(doc(db, 'wedding_hero_photos', photoId));
+      });
+      setHeroMediaSuccess('Imagen eliminada del carrusel.');
+      window.setTimeout(() => setHeroMediaSuccess(''), 2500);
     } catch (error) {
-      handleFirestoreError(
-        error,
-        OperationType.DELETE,
-        `wedding_hero_photos/${photoId}`
-      );
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     }
   };
 
@@ -2371,27 +2397,29 @@ export const CoupleAdminSection: React.FC = () => {
     setHideDefaultHeroPhotos(nextHide);
     setHeroMediaError('');
     try {
-      await setDoc(
-        doc(db, 'wedding_settings', 'main'),
-        buildPersistedSettingsPayload({ hideDefaultHeroPhotos: nextHide })
-      );
+      const nextPayload = buildPersistedSettingsPayload({
+        hideDefaultHeroPhotos: nextHide,
+      });
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+          merge: true,
+        });
+      });
+      syncLocalConfigFromPayload(nextPayload);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.WRITE,
-          'wedding_settings/main'
-        );
-      } catch {
-        setHeroMediaError('No se pudo actualizar la preferencia del carrusel.');
-      }
+      setHideDefaultHeroPhotos(!nextHide);
+      setHeroMediaError(formatFirestoreSaveError(error, currentUser));
     }
   };
 
   // --- AMBIENT AUDIO HANDLERS ---
   useEffect(() => {
     let cancelled = false;
-    if (customAudioMode !== 'uploaded' || !customAudioUpdatedToken) {
+    if (
+      customAudioMode !== 'uploaded' ||
+      !customAudioUpdatedToken ||
+      customAudioUpdatedToken === 'default-por-ti-volare'
+    ) {
       loadedAdminTokenRef.current = '';
       setAdminPreviewBlobUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
@@ -2497,14 +2525,16 @@ export const CoupleAdminSection: React.FC = () => {
           `Subiendo audio a la nube (${i + 1} de ${prepared.chunks.length})...`
         );
         const chunkId = `${trackToken}_${i}`;
-        await setDoc(doc(db, 'wedding_audio_chunks', chunkId), {
-          id: chunkId,
-          trackToken,
-          index: i,
-          totalChunks: prepared.chunks.length,
-          mimeType: prepared.mimeType,
-          data: prepared.chunks[i],
-          createdAt: serverTimestamp(),
+        await executeAdminFirestoreWrite(async () => {
+          await setDoc(doc(db, 'wedding_audio_chunks', chunkId), {
+            id: chunkId,
+            trackToken,
+            index: i,
+            totalChunks: prepared.chunks.length,
+            mimeType: prepared.mimeType,
+            data: prepared.chunks[i],
+            createdAt: serverTimestamp(),
+          });
         });
       }
 
@@ -2525,6 +2555,7 @@ export const CoupleAdminSection: React.FC = () => {
           { merge: true }
         );
       });
+      syncLocalConfigFromPayload(nextSettingsPayload);
 
       loadedAdminTokenRef.current = trackToken;
       setAdminPreviewBlobUrl((prev) => {
@@ -2549,9 +2580,9 @@ export const CoupleAdminSection: React.FC = () => {
         URL.revokeObjectURL(createdPreviewUrl);
       }
       setAudioMediaError(
-        err instanceof Error
+        err instanceof Error && !isPermissionDeniedError(err)
           ? err.message
-          : 'No se pudo subir el archivo de audio.'
+          : formatFirestoreSaveError(err, currentUser)
       );
     } finally {
       setUploadingAudio(false);
@@ -2565,8 +2596,16 @@ export const CoupleAdminSection: React.FC = () => {
     setAudioMediaError('');
     setAudioMediaSuccess('');
 
-    const cleanUrl = customAudioUrl.trim().slice(0, 500);
-    if (!cleanUrl.startsWith('https://')) {
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
+
+    const cleanUrl = customAudioUrl
+      .trim()
+      .slice(0, 500)
+      .replace(/^https:\/\//i, 'https://');
+    if (!/^https:\/\/[^/]/i.test(cleanUrl)) {
       setAudioMediaError(
         'El enlace de audio debe comenzar con https:// (por ejemplo, un enlace directo a un archivo .mp3).'
       );
@@ -2577,31 +2616,55 @@ export const CoupleAdminSection: React.FC = () => {
     try {
       const nextTitle =
         customAudioTitle.trim().slice(0, 120) || 'Música Personalizada';
-      await executeAdminFirestoreWrite(async () => {
-        await setDoc(
-          doc(db, 'wedding_settings', 'main'),
-          buildPersistedSettingsPayload({
-            customAudioMode: 'url',
-            customAudioUrl: cleanUrl,
-            customAudioTitle: nextTitle,
-          }),
-          { merge: true }
-        );
+      const nextPayload = buildPersistedSettingsPayload({
+        customAudioMode: 'url',
+        customAudioUrl: cleanUrl,
+        customAudioTitle: nextTitle,
       });
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+          merge: true,
+        });
+      });
+      syncLocalConfigFromPayload(nextPayload);
       setCustomAudioMode('url');
+      setCustomAudioUrl(cleanUrl);
       setCustomAudioTitle(nextTitle);
       setAudioMediaSuccess('Enlace de música guardado y activado.');
       window.setTimeout(() => setAudioMediaSuccess(''), 4000);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.WRITE,
-          'wedding_settings/main'
-        );
-      } catch {
-        setAudioMediaError('No se pudo guardar el enlace de audio.');
-      }
+      setAudioMediaError(formatFirestoreSaveError(error, currentUser));
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
+  const handleActivateUploadedAudio = async () => {
+    if (!customAudioUpdatedToken || customAudioUpdatedToken === 'default-por-ti-volare') {
+      return;
+    }
+    setAudioMediaError('');
+    setAudioMediaSuccess('');
+    setUploadingAudio(true);
+    if (adminPreviewAudioRef.current) {
+      adminPreviewAudioRef.current.pause();
+      setIsAdminPreviewPlaying(false);
+    }
+    try {
+      const nextPayload = buildPersistedSettingsPayload({
+        customAudioMode: 'uploaded',
+      });
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+          merge: true,
+        });
+      });
+      syncLocalConfigFromPayload(nextPayload);
+      setCustomAudioMode('uploaded');
+      setAudioMediaSuccess('Archivo de audio subido activado en la invitación.');
+      window.setTimeout(() => setAudioMediaSuccess(''), 3500);
+    } catch (error) {
+      setAudioMediaError(formatFirestoreSaveError(error, currentUser));
     } finally {
       setUploadingAudio(false);
     }
@@ -2616,28 +2679,22 @@ export const CoupleAdminSection: React.FC = () => {
       setIsAdminPreviewPlaying(false);
     }
     try {
-      await executeAdminFirestoreWrite(async () => {
-        await setDoc(
-          doc(db, 'wedding_settings', 'main'),
-          buildPersistedSettingsPayload({
-            customAudioMode: 'synth',
-          }),
-          { merge: true }
-        );
+      const nextPayload = buildPersistedSettingsPayload({
+        customAudioMode: 'synth',
+        customAudioTitle: DEFAULT_INTEGRATED_AUDIO_TITLE,
       });
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+          merge: true,
+        });
+      });
+      syncLocalConfigFromPayload(nextPayload);
       setCustomAudioMode('synth');
-      setAudioMediaSuccess('Melodía ambiental romántica integrada activada.');
+      setCustomAudioTitle(DEFAULT_INTEGRATED_AUDIO_TITLE);
+      setAudioMediaSuccess('Melodía ambiental integrada activada.');
       window.setTimeout(() => setAudioMediaSuccess(''), 3500);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.WRITE,
-          'wedding_settings/main'
-        );
-      } catch {
-        setAudioMediaError('No se pudo cambiar la configuración de audio.');
-      }
+      setAudioMediaError(formatFirestoreSaveError(error, currentUser));
     } finally {
       setUploadingAudio(false);
     }
@@ -2653,42 +2710,39 @@ export const CoupleAdminSection: React.FC = () => {
     }
     try {
       await cleanupOldAudioChunks('__none__');
-      await executeAdminFirestoreWrite(async () => {
-        await setDoc(
-          doc(db, 'wedding_settings', 'main'),
-          buildPersistedSettingsPayload({
-            customAudioMode: customAudioUrl.startsWith('https://')
-              ? 'url'
-              : 'synth',
-            customAudioTitle: 'Melodía Ambiental Romántica',
-            customAudioMime: 'audio/mpeg',
-            customAudioChunkCount: 0,
-            customAudioUpdatedToken: '',
-            customAudioDurationSec: 0,
-          }),
-          { merge: true }
-        );
+      const hasValidUrl = /^https:\/\/[^/]/i.test(customAudioUrl.trim());
+      const nextMode: CustomAudioMode = hasValidUrl ? 'url' : 'synth';
+      const nextTitle = hasValidUrl
+        ? customAudioTitle.trim().slice(0, 120) || 'Música Personalizada'
+        : DEFAULT_INTEGRATED_AUDIO_TITLE;
+      const nextPayload = buildPersistedSettingsPayload({
+        customAudioMode: nextMode,
+        customAudioTitle: nextTitle,
+        customAudioMime: 'audio/mpeg',
+        customAudioChunkCount: 0,
+        customAudioUpdatedToken: '',
+        customAudioDurationSec: 0,
       });
+      await executeAdminFirestoreWrite(async () => {
+        await setDoc(doc(db, 'wedding_settings', 'main'), nextPayload, {
+          merge: true,
+        });
+      });
+      syncLocalConfigFromPayload(nextPayload);
       setAdminPreviewBlobUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return '';
       });
       loadedAdminTokenRef.current = '';
+      setCustomAudioMode(nextMode);
+      setCustomAudioTitle(nextTitle);
       setCustomAudioChunkCount(0);
       setCustomAudioUpdatedToken('');
       setCustomAudioDurationSec(0);
       setAudioMediaSuccess('Audio subido eliminado de la nube.');
       window.setTimeout(() => setAudioMediaSuccess(''), 3500);
     } catch (error) {
-      try {
-        handleFirestoreError(
-          error,
-          OperationType.DELETE,
-          'wedding_audio_chunks'
-        );
-      } catch {
-        setAudioMediaError('No se pudo eliminar el audio guardado.');
-      }
+      setAudioMediaError(formatFirestoreSaveError(error, currentUser));
     } finally {
       setUploadingAudio(false);
     }
@@ -2697,6 +2751,7 @@ export const CoupleAdminSection: React.FC = () => {
   const handleToggleAdminAudioPreview = async () => {
     const el = adminPreviewAudioRef.current;
     if (!el) return;
+    setAudioMediaError('');
     if (isAdminPreviewPlaying) {
       el.pause();
       setIsAdminPreviewPlaying(false);
@@ -2706,7 +2761,7 @@ export const CoupleAdminSection: React.FC = () => {
         setIsAdminPreviewPlaying(true);
       } catch {
         setAudioMediaError(
-          'No se pudo reproducir la vista previa en este navegador.'
+          'No se pudo reproducir la vista previa. Verifica que el enlace o archivo de audio sea válido y público.'
         );
       }
     }
@@ -3533,6 +3588,20 @@ export const CoupleAdminSection: React.FC = () => {
                           />
                         </label>
 
+                        {customAudioUpdatedToken &&
+                          customAudioUpdatedToken !== 'default-por-ti-volare' &&
+                          customAudioMode !== 'uploaded' && (
+                            <button
+                              type="button"
+                              disabled={uploadingAudio}
+                              onClick={() => void handleActivateUploadedAudio()}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-full border border-[#b89753]/50 bg-white hover:bg-[#fcfbf9] text-[#2c3e35] text-xs font-semibold cursor-pointer"
+                            >
+                              <Music className="w-3.5 h-3.5 text-[#b89753]" />
+                              <span>Activar este archivo</span>
+                            </button>
+                          )}
+
                         {customAudioUpdatedToken && (
                           <button
                             type="button"
@@ -3554,53 +3623,70 @@ export const CoupleAdminSection: React.FC = () => {
                       </p>
                     )}
 
-                    {/* Inline Admin Audio Preview Player */}
-                    {((customAudioMode === 'uploaded' && adminPreviewBlobUrl) ||
-                      (customAudioMode === 'url' &&
-                        customAudioUrl.startsWith('https://'))) && (
-                      <div className="rounded-xl bg-white border border-[#b89753]/30 p-3 flex flex-wrap items-center justify-between gap-3">
-                        <audio
-                          ref={adminPreviewAudioRef}
-                          src={
-                            customAudioMode === 'uploaded'
-                              ? adminPreviewBlobUrl
-                              : customAudioUrl
-                          }
-                          onEnded={() => setIsAdminPreviewPlaying(false)}
-                          onPause={() => setIsAdminPreviewPlaying(false)}
-                          onPlay={() => setIsAdminPreviewPlaying(true)}
-                          className="hidden"
-                        />
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleAdminAudioPreview()}
-                            className="w-9 h-9 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] text-white flex items-center justify-center shrink-0 cursor-pointer"
-                            aria-label={
-                              isAdminPreviewPlaying
-                                ? 'Pausar vista previa'
-                                : 'Escuchar vista previa'
-                            }
-                          >
-                            {isAdminPreviewPlaying ? (
-                              <Pause className="w-4 h-4 text-[#b89753]" />
-                            ) : (
-                              <Play className="w-4 h-4 text-[#b89753] ml-0.5" />
-                            )}
-                          </button>
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-[#2c3e35] truncate">
-                              {customAudioTitle}
-                            </p>
-                            <p className="text-[11px] text-[#2c3e35]/60">
-                              {isAdminPreviewPlaying
-                                ? 'Reproduciendo vista previa...'
-                                : 'Pulsa Play para probar cómo sonará en la invitación'}
-                            </p>
+                    {/* Inline Admin Audio Preview Player (supports uploaded, URL, and integrated track) */}
+                    {(() => {
+                      const adminPreviewSrc =
+                        customAudioMode === 'uploaded'
+                          ? adminPreviewBlobUrl
+                          : customAudioMode === 'url' &&
+                              /^https:\/\/[^/]/i.test(customAudioUrl.trim())
+                            ? customAudioUrl.trim()
+                            : DEFAULT_INTEGRATED_AUDIO_URL;
+                      const adminPreviewTitle =
+                        customAudioMode === 'synth'
+                          ? DEFAULT_INTEGRATED_AUDIO_TITLE
+                          : customAudioTitle || DEFAULT_INTEGRATED_AUDIO_TITLE;
+                      if (!adminPreviewSrc) return null;
+                      return (
+                        <div className="rounded-xl bg-white border border-[#b89753]/30 p-3 flex flex-wrap items-center justify-between gap-3">
+                          <audio
+                            ref={adminPreviewAudioRef}
+                            src={adminPreviewSrc}
+                            preload="none"
+                            onEnded={() => setIsAdminPreviewPlaying(false)}
+                            onPause={() => setIsAdminPreviewPlaying(false)}
+                            onPlay={() => setIsAdminPreviewPlaying(true)}
+                            onError={() => {
+                              setIsAdminPreviewPlaying(false);
+                              if (customAudioMode === 'url') {
+                                setAudioMediaError(
+                                  'No se pudo cargar el enlace externo para vista previa. Si falla para los invitados, sonará la melodía integrada de respaldo.'
+                                );
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleAdminAudioPreview()}
+                              className="w-9 h-9 rounded-full bg-[#2c3e35] hover:bg-[#1f2c26] text-white flex items-center justify-center shrink-0 cursor-pointer"
+                              aria-label={
+                                isAdminPreviewPlaying
+                                  ? 'Pausar vista previa'
+                                  : 'Escuchar vista previa'
+                              }
+                            >
+                              {isAdminPreviewPlaying ? (
+                                <Pause className="w-4 h-4 text-[#b89753]" />
+                              ) : (
+                                <Play className="w-4 h-4 text-[#b89753] ml-0.5" />
+                              )}
+                            </button>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-[#2c3e35] truncate">
+                                {adminPreviewTitle}
+                              </p>
+                              <p className="text-[11px] text-[#2c3e35]/60">
+                                {isAdminPreviewPlaying
+                                  ? 'Reproduciendo vista previa...'
+                                  : 'Pulsa Play para probar cómo sonará en la invitación'}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   {/* Alternative: Direct HTTPS Audio URL */}
@@ -5127,7 +5213,7 @@ export const CoupleAdminSection: React.FC = () => {
                             Desglose
                           </th>
                           <th className="py-3 px-4 font-semibold">
-                            Mesa y Ubicación
+                            Mesa Asignada
                           </th>
                           <th className="py-3 px-4 font-semibold">
                             Contacto y Notas
@@ -5139,10 +5225,6 @@ export const CoupleAdminSection: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-[#b89753]/15">
                         {filteredRsvps.map((r) => {
-                          const zone =
-                            r.attending && r.tableNumber > 0
-                              ? getZoneInfo(r.tableNumber).zoneLabel
-                              : 'Sin asignación';
                           return (
                             <tr key={r.id} className="align-top">
                               <td className="py-3.5 pr-4">
@@ -5199,32 +5281,27 @@ export const CoupleAdminSection: React.FC = () => {
                               </td>
                               <td className="py-3.5 px-4 whitespace-nowrap">
                                 {r.attending ? (
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <label
-                                        htmlFor={`mesa-${r.id}`}
-                                        className="text-xs text-[#2c3e35]/60"
-                                      >
-                                        Mesa #
-                                      </label>
-                                      <NumericInput
-                                        id={`mesa-${r.id}`}
-                                        min={1}
-                                        max={100}
-                                        defaultValue={r.tableNumber}
-                                        value={r.tableNumber}
-                                        onCommit={() => {}}
-                                        onBlurCommit={(val) => {
-                                          if (val >= 1 && val !== r.tableNumber) {
-                                            void handleTableReassign(r, val);
-                                          }
-                                        }}
-                                        className="w-16 h-8 rounded-lg border border-[#b89753]/35 bg-[#fcfbf9] px-2 text-xs font-semibold text-[#2c3e35] tabular-nums"
-                                      />
-                                    </div>
-                                    <p className="text-[11px] text-[#b89753]">
-                                      {zone}
-                                    </p>
+                                  <div className="flex items-center gap-1.5">
+                                    <label
+                                      htmlFor={`mesa-${r.id}`}
+                                      className="text-xs text-[#2c3e35]/60"
+                                    >
+                                      Mesa #
+                                    </label>
+                                    <NumericInput
+                                      id={`mesa-${r.id}`}
+                                      min={1}
+                                      max={100}
+                                      defaultValue={r.tableNumber}
+                                      value={r.tableNumber}
+                                      onCommit={() => {}}
+                                      onBlurCommit={(val) => {
+                                        if (val >= 1 && val !== r.tableNumber) {
+                                          void handleTableReassign(r, val);
+                                        }
+                                      }}
+                                      className="w-16 h-8 rounded-lg border border-[#b89753]/35 bg-[#fcfbf9] px-2 text-xs font-semibold text-[#2c3e35] tabular-nums"
+                                    />
                                   </div>
                                 ) : (
                                   <span className="text-xs text-[#2c3e35]/50">

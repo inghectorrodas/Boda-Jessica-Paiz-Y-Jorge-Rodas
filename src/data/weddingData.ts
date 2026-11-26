@@ -205,6 +205,11 @@ export const DEFAULT_GODPARENTS_LIST: GodparentRole[] = [
   { roleName: 'Padrinos de Tarjeta', names: 'Elia Cristina & Ing. Héctor Rodas' },
 ];
 
+export const DEFAULT_INTEGRATED_AUDIO_URL =
+  '/assets/aistudio/POR_TI_VOLARE_-_Andrea_Bocelli_Arcano_f7efb475.mp3';
+export const DEFAULT_INTEGRATED_AUDIO_TITLE =
+  'POR TI VOLARE - Andrea Bocelli / Arcano';
+
 export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   googlePhotosUrl:
     'https://drive.google.com/drive/folders/13Ii_V2aNXTZUbuvefWLIbS_L6jP0mMfR?usp=sharing',
@@ -242,12 +247,12 @@ export const DEFAULT_WEDDING_CONFIG: WeddingConfigRecord = {
   giftQrValue: '',
   giftQrImage: '',
   hideDefaultHeroPhotos: false,
-  customAudioMode: 'url',
-  customAudioUrl: '/assets/aistudio/POR_TI_VOLARE_-_Andrea_Bocelli_Arcano_f7efb475.mp3',
-  customAudioTitle: 'POR TI VOLARE - Andrea Bocelli / Arcano',
+  customAudioMode: 'synth',
+  customAudioUrl: '',
+  customAudioTitle: DEFAULT_INTEGRATED_AUDIO_TITLE,
   customAudioMime: 'audio/mpeg',
   customAudioChunkCount: 0,
-  customAudioUpdatedToken: 'default-por-ti-volare',
+  customAudioUpdatedToken: '',
   customAudioDurationSec: 240,
 };
 
@@ -626,27 +631,72 @@ function mergeWeddingConfigDirect(raw?: Record<string, unknown> | null): Wedding
       typeof raw.giftClabeOrId === 'string' ? raw.giftClabeOrId : '',
     giftBizPhone: typeof raw.giftBizPhone === 'string' ? raw.giftBizPhone : '',
     giftAppAlias: typeof raw.giftAppAlias === 'string' ? raw.giftAppAlias : '',
-    customAudioMode:
-      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken
-        ? 'uploaded'
-        : 'url',
-    customAudioUrl:
-      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken && typeof raw.customAudioUrl === 'string' && raw.customAudioUrl.trim()
-        ? raw.customAudioUrl.trim()
-        : DEFAULT_WEDDING_CONFIG.customAudioUrl,
-    customAudioTitle:
-      raw.customAudioMode === 'uploaded' && raw.customAudioUpdatedToken && typeof raw.customAudioTitle === 'string' && raw.customAudioTitle.trim()
-        ? raw.customAudioTitle.trim()
-        : DEFAULT_WEDDING_CONFIG.customAudioTitle,
+    customAudioMode: (() => {
+      const rawToken =
+        typeof raw.customAudioUpdatedToken === 'string' &&
+        raw.customAudioUpdatedToken !== 'default-por-ti-volare'
+          ? raw.customAudioUpdatedToken.trim()
+          : '';
+      const rawUrlStr = typeof raw.customAudioUrl === 'string' ? raw.customAudioUrl.trim() : '';
+      const isLegacyLocalAudio =
+        rawUrlStr.includes('/assets/aistudio/POR_TI_VOLARE') ||
+        rawUrlStr.startsWith('https:///');
+      const hasExternalUrl =
+        !isLegacyLocalAudio && /^https?:\/\/[^/]/i.test(rawUrlStr);
+
+      if (raw.customAudioMode === 'uploaded' && rawToken) {
+        return 'uploaded';
+      }
+      if (raw.customAudioMode === 'url' && hasExternalUrl) {
+        return 'url';
+      }
+      return 'synth';
+    })(),
+    customAudioUrl: (() => {
+      const rawUrlStr = typeof raw.customAudioUrl === 'string' ? raw.customAudioUrl.trim() : '';
+      if (
+        !rawUrlStr ||
+        rawUrlStr.includes('/assets/aistudio/POR_TI_VOLARE') ||
+        rawUrlStr.startsWith('https:///')
+      ) {
+        return '';
+      }
+      return /^https?:\/\/[^/]/i.test(rawUrlStr) ? rawUrlStr : '';
+    })(),
+    customAudioTitle: (() => {
+      const rawTitle =
+        typeof raw.customAudioTitle === 'string' ? raw.customAudioTitle.trim() : '';
+      const rawToken =
+        typeof raw.customAudioUpdatedToken === 'string' &&
+        raw.customAudioUpdatedToken !== 'default-por-ti-volare'
+          ? raw.customAudioUpdatedToken.trim()
+          : '';
+      const rawUrlStr = typeof raw.customAudioUrl === 'string' ? raw.customAudioUrl.trim() : '';
+      const isLegacyLocalAudio =
+        rawUrlStr.includes('/assets/aistudio/POR_TI_VOLARE') ||
+        rawUrlStr.startsWith('https:///');
+      const hasExternalUrl =
+        !isLegacyLocalAudio && /^https?:\/\/[^/]/i.test(rawUrlStr);
+      const isCustomActive =
+        (raw.customAudioMode === 'uploaded' && Boolean(rawToken)) ||
+        (raw.customAudioMode === 'url' && hasExternalUrl);
+      if (isCustomActive && rawTitle) {
+        return rawTitle;
+      }
+      return DEFAULT_INTEGRATED_AUDIO_TITLE;
+    })(),
     customAudioMime:
-      typeof raw.customAudioMime === 'string' ? raw.customAudioMime : '',
+      typeof raw.customAudioMime === 'string' && raw.customAudioMime.trim()
+        ? raw.customAudioMime.trim()
+        : 'audio/mpeg',
     customAudioChunkCount:
       typeof raw.customAudioChunkCount === 'number'
         ? raw.customAudioChunkCount
         : 0,
     customAudioUpdatedToken:
-      typeof raw.customAudioUpdatedToken === 'string'
-        ? raw.customAudioUpdatedToken
+      typeof raw.customAudioUpdatedToken === 'string' &&
+      raw.customAudioUpdatedToken !== 'default-por-ti-volare'
+        ? raw.customAudioUpdatedToken.trim()
         : '',
     customAudioDurationSec:
       typeof raw.customAudioDurationSec === 'number'

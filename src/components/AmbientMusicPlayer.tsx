@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Music, Volume2, VolumeX } from 'lucide-react';
-import { WeddingConfigRecord, DEFAULT_WEDDING_CONFIG } from '../data/weddingData';
+import {
+  DEFAULT_INTEGRATED_AUDIO_TITLE,
+  DEFAULT_INTEGRATED_AUDIO_URL,
+  WeddingConfigRecord,
+} from '../data/weddingData';
 import { db } from '../firebase';
 import { assembleAudioBlobUrlFromChunks } from '../utils/audioStorage';
 
@@ -15,15 +19,31 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   config,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [externalFallbackActive, setExternalFallbackActive] = useState(false);
 
-  const audioToken = config.customAudioUpdatedToken?.trim() ?? '';
-  const audioMode = audioToken && config.customAudioMode !== 'url'
-    ? 'uploaded'
-    : 'url';
+  const rawToken = config.customAudioUpdatedToken?.trim() ?? '';
+  const audioToken =
+    rawToken && rawToken !== 'default-por-ti-volare' ? rawToken : '';
+  const rawUrl = config.customAudioUrl?.trim() ?? '';
+  const isValidExternalUrl =
+    Boolean(rawUrl) &&
+    !rawUrl.includes('/assets/aistudio/POR_TI_VOLARE') &&
+    !rawUrl.startsWith('https:///') &&
+    /^https?:\/\/[^/]/i.test(rawUrl);
 
-  const audioUrl = config.customAudioUrl?.trim() || DEFAULT_WEDDING_CONFIG.customAudioUrl || '/assets/aistudio/POR_TI_VOLARE_-_Andrea_Bocelli_Arcano_f7efb475.mp3';
+  const audioMode: 'uploaded' | 'url' | 'synth' =
+    config.customAudioMode === 'uploaded' && audioToken
+      ? 'uploaded'
+      : config.customAudioMode === 'url' && isValidExternalUrl
+        ? 'url'
+        : 'synth';
+
+  const audioUrl = isValidExternalUrl ? rawUrl : DEFAULT_INTEGRATED_AUDIO_URL;
   const audioMime = config.customAudioMime?.trim() || 'audio/mpeg';
-  const audioTitle = config.customAudioTitle?.trim() || 'POR TI VOLARE - Andrea Bocelli / Arcano';
+  const audioTitle =
+    externalFallbackActive || audioMode === 'synth'
+      ? DEFAULT_INTEGRATED_AUDIO_TITLE
+      : config.customAudioTitle?.trim() || DEFAULT_INTEGRATED_AUDIO_TITLE;
 
   const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string>(() => {
     if (audioMode === 'uploaded' && audioToken && AUDIO_BLOB_CACHE.has(audioToken)) {
@@ -42,6 +62,10 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    setExternalFallbackActive(false);
+  }, [audioMode, rawUrl, audioToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,11 +117,6 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         loadedTokenRef.current = audioToken;
         setUploadedBlobUrl(nextUrl);
 
-        if (audioElRef.current) {
-          audioElRef.current.src = nextUrl;
-          audioElRef.current.load();
-        }
-
         return nextUrl;
       } catch (err) {
         console.warn('Error loading custom audio chunks:', err);
@@ -113,14 +132,39 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
   }, [audioMode, audioToken, audioMime]);
 
   const resolvedCustomSrc =
-    audioMode === 'uploaded'
-      ? uploadedBlobUrl || (audioToken ? AUDIO_BLOB_CACHE.get(audioToken) || '' : '')
-      : audioUrl;
+    externalFallbackActive || audioMode === 'synth'
+      ? DEFAULT_INTEGRATED_AUDIO_URL
+      : audioMode === 'uploaded'
+        ? uploadedBlobUrl || (audioToken ? AUDIO_BLOB_CACHE.get(audioToken) || '' : '')
+        : audioUrl;
+
+  useEffect(() => {
+    const el = audioElRef.current;
+    if (!el || !resolvedCustomSrc) return;
+    if (el.getAttribute('src') !== resolvedCustomSrc && el.src !== resolvedCustomSrc) {
+      const wasPlaying = isPlayingRef.current;
+      el.pause();
+      el.src = resolvedCustomSrc;
+      el.load();
+      if (wasPlaying) {
+        el.volume = 0.85;
+        void el
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => setIsPlaying(false));
+      }
+    }
+  }, [resolvedCustomSrc]);
 
   const startPlayback = async () => {
     let targetSrc = resolvedCustomSrc;
 
-    if (audioMode === 'uploaded' && !targetSrc && loadChunksPromiseRef.current) {
+    if (
+      audioMode === 'uploaded' &&
+      !externalFallbackActive &&
+      !targetSrc &&
+      loadChunksPromiseRef.current
+    ) {
       try {
         const resolved = await Promise.race([
           loadChunksPromiseRef.current,
@@ -131,22 +175,47 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
         if (resolved) {
           targetSrc = resolved;
         }
-      } catch {}
+      } catch {
+        // Fallback below if chunks failed or timed out
+      }
     }
 
-    if (targetSrc && audioElRef.current) {
-      try {
-        const el = audioElRef.current;
-        if (el.src !== targetSrc) {
-          el.src = targetSrc;
-        }
-        el.volume = 0.85;
-        await el.play();
-        setIsPlaying(true);
-      } catch (err) {
-        console.warn('Autoplay prevented or audio load failed:', err);
-        setIsPlaying(false);
+    if (!targetSrc) {
+      setExternalFallbackActive(true);
+      targetSrc = DEFAULT_INTEGRATED_AUDIO_URL;
+    }
+
+    const el = audioElRef.current;
+    if (!el) return;
+
+    try {
+      if (el.getAttribute('src') !== targetSrc && el.src !== targetSrc) {
+        el.src = targetSrc;
+        el.load();
       }
+      el.volume = 0.85;
+      await el.play();
+      setIsPlaying(true);
+    } catch (err) {
+      const errName =
+        typeof err === 'object' && err !== null && 'name' in err
+          ? String((err as { name: string }).name)
+          : '';
+      if (errName !== 'NotAllowedError' && targetSrc !== DEFAULT_INTEGRATED_AUDIO_URL) {
+        try {
+          setExternalFallbackActive(true);
+          el.src = DEFAULT_INTEGRATED_AUDIO_URL;
+          el.load();
+          el.volume = 0.85;
+          await el.play();
+          setIsPlaying(true);
+          return;
+        } catch {
+          // Ignore fallback failure
+        }
+      }
+      console.warn('Autoplay prevented or audio load failed:', err);
+      setIsPlaying(false);
     }
   };
 
@@ -212,14 +281,28 @@ export const AmbientMusicPlayer: React.FC<AmbientMusicPlayerProps> = ({
     };
   }, []);
 
+  const handleAudioElementError = () => {
+    if (resolvedCustomSrc !== DEFAULT_INTEGRATED_AUDIO_URL) {
+      setExternalFallbackActive(true);
+      const el = audioElRef.current;
+      if (el && isPlayingRef.current) {
+        el.src = DEFAULT_INTEGRATED_AUDIO_URL;
+        el.load();
+        el.volume = 0.85;
+        void el.play().catch(() => setIsPlaying(false));
+      }
+    }
+  };
+
   return (
     <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5">
       <audio
         ref={audioElRef}
-        src={resolvedCustomSrc}
+        src={resolvedCustomSrc || undefined}
         loop
         playsInline
-        preload="auto"
+        preload="none"
+        onError={handleAudioElementError}
         className="hidden"
       />
       <button

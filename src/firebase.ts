@@ -1,12 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import {
-  doc,
-  getDocFromServer,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-} from 'firebase/firestore';
+import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -18,15 +12,7 @@ export const GOOGLE_DRIVE_SCOPES = [
 export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 export const FIREBASE_DATABASE_ID = firebaseConfig.firestoreDatabaseId;
 
-export const db = initializeFirestore(
-  app,
-  {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  },
-  firebaseConfig.firestoreDatabaseId
-);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const adminGoogleProvider = new GoogleAuthProvider();
 adminGoogleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -87,6 +73,10 @@ export function handleFirestoreError(
 }
 
 export async function testConnection(): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return;
+  }
+
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -94,8 +84,11 @@ export async function testConnection(): Promise<void> {
       error instanceof Error &&
       error.message.includes('the client is offline')
     ) {
-      console.error(
-        'No se pudo conectar con Firestore. Verifica la configuración de Firebase.'
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return;
+      }
+      console.warn(
+        'Firestore aún conectando en red lenta; operando con respaldo local temporalmente.'
       );
     }
   }

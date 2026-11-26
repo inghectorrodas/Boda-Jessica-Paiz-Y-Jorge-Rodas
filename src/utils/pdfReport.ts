@@ -5,7 +5,6 @@ import {
   formatWeddingEventDateLabel,
   formatWeddingReportDateLabel,
   getSurnameSortKey,
-  getZoneInfo,
   GuestParty,
   GuestRelationGroup,
   INITIAL_GUEST_PARTIES,
@@ -133,8 +132,6 @@ export function exportWeddingReportPdf(
   doc.text('2. Listado de Invitados Confirmados y Mesa Asignada', 14, nextY);
 
   const confirmedRows = confirmed.map((r, idx) => {
-    const zone =
-      r.tableNumber > 0 ? getZoneInfo(r.tableNumber).zoneLabel : 'Sin asignar';
     const contactNotes = [r.phone, r.notes].filter(Boolean).join(' · ') || '—';
     return [
       String(idx + 1),
@@ -144,7 +141,6 @@ export function exportWeddingReportPdf(
       String(r.babies),
       String(r.adults + r.kids),
       r.tableNumber > 0 ? `Mesa #${r.tableNumber}` : '—',
-      zone,
       contactNotes,
     ];
   });
@@ -157,7 +153,6 @@ export function exportWeddingReportPdf(
       '0',
       '0',
       '0',
-      '—',
       '—',
       '—',
     ]);
@@ -174,7 +169,6 @@ export function exportWeddingReportPdf(
         'Bb.',
         'Asientos',
         'Mesa',
-        'Ubicación Salón',
         'Contacto / Notas',
       ],
     ],
@@ -198,9 +192,8 @@ export function exportWeddingReportPdf(
       2: { cellWidth: 10, halign: 'center' },
       3: { cellWidth: 10, halign: 'center' },
       4: { cellWidth: 10, halign: 'center' },
-      5: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-      6: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
-      7: { cellWidth: 30 },
+      5: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+      6: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
     },
     styles: {
       lineColor: [220, 210, 188],
@@ -251,7 +244,6 @@ export function exportWeddingReportPdf(
         : 'Disponible';
     return [
       `Mesa #${table.tableNumber}`,
-      table.zoneLabel,
       `${table.occupiedSeats} / ${table.capacity}`,
       familiesText,
     ];
@@ -259,7 +251,7 @@ export function exportWeddingReportPdf(
 
   autoTable(doc, {
     startY: nextY + 3,
-    head: [['Mesa', 'Zona en el Salón', 'Ocupación', 'Familias Agrupadas']],
+    head: [['Mesa', 'Ocupación', 'Familias Agrupadas']],
     body: tableSummaryRows,
     theme: 'striped',
     headStyles: {
@@ -273,9 +265,8 @@ export function exportWeddingReportPdf(
       fontSize: 8,
     },
     columnStyles: {
-      0: { cellWidth: 22, fontStyle: 'bold' },
-      1: { cellWidth: 38 },
-      2: { cellWidth: 22, halign: 'center' },
+      0: { cellWidth: 26, fontStyle: 'bold' },
+      1: { cellWidth: 26, halign: 'center' },
     },
     styles: {
       lineColor: [220, 210, 188],
@@ -368,7 +359,6 @@ export function exportTablePlaceCardsPdf(
       doc.addPage();
     }
 
-    const { zoneLabel, proximityNote } = getZoneInfo(tableNum);
     const tableRsvps = confirmed.filter((r) => r.tableNumber === tableNum);
 
     // Build the 10 seats array
@@ -498,25 +488,15 @@ export function exportTablePlaceCardsPdf(
 
     // --- Table Identification Card ---
     doc.setFillColor(247, 245, 240);
-    doc.roundedRect(18, 54, pageWidth - 36, 31, 2.5, 2.5, 'F');
+    doc.roundedRect(18, 54, pageWidth - 36, 24, 2.5, 2.5, 'F');
     doc.setDrawColor(184, 151, 83);
     doc.setLineWidth(0.4);
-    doc.roundedRect(18, 54, pageWidth - 36, 31, 2.5, 2.5, 'D');
+    doc.roundedRect(18, 54, pageWidth - 36, 24, 2.5, 2.5, 'D');
 
     doc.setTextColor(44, 62, 53);
     doc.setFont('times', 'bold');
     doc.setFontSize(27);
-    doc.text(`MESA #${tableNum}`, pageWidth / 2, 66.5, { align: 'center' });
-
-    doc.setTextColor(184, 151, 83);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(zoneLabel.toUpperCase(), pageWidth / 2, 73.5, { align: 'center' });
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(85, 85, 85);
-    doc.text(proximityNote, pageWidth / 2, 79.5, { align: 'center' });
+    doc.text(`MESA #${tableNum}`, pageWidth / 2, 69.5, { align: 'center' });
 
     // Section title
     doc.setFont('helvetica', 'bold');
@@ -525,7 +505,7 @@ export function exportTablePlaceCardsPdf(
     doc.text(
       `DISTRIBUCIÓN DE ASIENTOS (1 AL 10) · ${occupiedCount} DE 10 OCUPADOS`,
       18,
-      94
+      88
     );
 
     // AutoTable: 10 Seats
@@ -537,7 +517,7 @@ export function exportTablePlaceCardsPdf(
     ]);
 
     autoTable(doc, {
-      startY: 97,
+      startY: 91,
       head: [
         [
           'Número de Asiento',
@@ -885,7 +865,7 @@ export function exportConfirmedGuestsBySurnamePdf(
                 : 'Sin asignar';
             const tableText =
               r.tableNumber > 0
-                ? `Mesa #${r.tableNumber}\n${getZoneInfo(r.tableNumber).zoneLabel}`
+                ? `Mesa #${r.tableNumber}`
                 : 'Sin asignar';
             const peopleBreakdown = [
               `${r.adults} ad`,

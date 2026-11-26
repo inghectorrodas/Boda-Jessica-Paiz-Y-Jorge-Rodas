@@ -1311,11 +1311,6 @@ export const RsvpAndTablesSection: React.FC = () => {
                         <h3 className="font-serif text-2xl font-semibold text-[#2c3e35]">
                           Mesa {table.tableNumber}
                         </h3>
-                        {isCoupleOrAdmin && (
-                          <p className="text-xs text-[#b89753] font-medium">
-                            {table.zoneLabel}
-                          </p>
-                        )}
                       </div>
                       <div className="text-right tabular-nums">
                         <span className="text-sm font-semibold text-[#2c3e35]">
@@ -1350,12 +1345,6 @@ export const RsvpAndTablesSection: React.FC = () => {
                         );
                       })}
                     </div>
-
-                    {isCoupleOrAdmin && table.proximityNote && (
-                      <p className="text-xs text-[#2c3e35]/60 mb-3">
-                        {table.proximityNote}
-                      </p>
-                    )}
 
                     {/* Grouped Families List */}
                     <ul className="space-y-2.5 pt-2 border-t border-[#b89753]/10">
